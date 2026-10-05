@@ -105,8 +105,13 @@ through `gen_getContractCode` and verified byte-for-byte against frozen
 commit `8c7d472522e90b481bce56794c175e2e951c99fa`; both sources are 36,535
 bytes with SHA-256
 `9b98e0016a38e7c4ad8e613370b0667e7c4b37910e4dbaf26e99a6a1688be005`.
-`get_info()` reports Counta 0.3.1. A fresh v0.3.1 live milestone lifecycle
-has not yet been recorded; v0.3.0 lifecycle evidence below is historical.
+`get_info()` reports Counta 0.3.1. A fresh live v0.3.1 flow finalized as
+`funded -> active -> submitted -> blocked -> refund_dispatched`; it did not
+produce a beneficiary payout. A second v0.3.1 release-attestation flow
+finalized `funded -> active -> submitted -> approved -> payout_dispatched`;
+the child transfer finalized with `value_credited=true` for the designated
+beneficiary. Both current-version outcomes, including exact transactions and
+artifact commitments, are recorded in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 **Historical deployed release: v0.3.0 (superseded).** It is deployed to Studionet at
 [`0x4235915E7ec84596239b2d29B93d1a2A982A1018`](https://explorer-studio.genlayer.com/address/0x4235915E7ec84596239b2d29B93d1a2A982A1018).

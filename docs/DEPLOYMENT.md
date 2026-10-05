@@ -18,9 +18,92 @@
 
 The v0.3.1 release changes the v0.3.0 infrastructure retry behavior, rejects
 all IP literals and single-label hostnames, and delays beneficiary alias
-creation until acceptance. This records deployment and exact source parity;
-it does not claim a fresh v0.3.1 live milestone review, payout, outage-recovery,
-or refund/timeout lifecycle. The v0.3.0 lifecycle below remains historical.
+creation until acceptance. Two v0.3.1 live flows are recorded below: one
+semantic rejection that refunded the sponsor, and one release-attestation
+approval whose child transfer credited the designated beneficiary. No
+v0.3.1 outage/timeout lifecycle is claimed.
+
+### v0.3.1 live milestone flow — blocked and sponsor refund dispatched
+
+The live identifier was `COUNTA-V031-LIVE-20261005-01`. Sponsor:
+`0x2cd419603eBa593074653930Ddc4073d4FD8fc60`. Beneficiary:
+`0x7C65cE913F5665c11f1219048112C84CD6cb2a4B`. The sponsor deposited the
+minimum 0.001 GEN (`1000000000000000` wei); the beneficiary accepted and
+submitted the committed artifacts. Both artifact URLs were fetched as raw
+bytes before submission, returned HTTP 200, decoded as UTF-8, and matched the
+listed SHA-256 values.
+
+Brief: “Complete the committed Counta live demo deliverable and provide
+matching evidence.” The short artifacts stated that a demo deliverable was
+complete and that verification confirmed it. On-chain semantic review did not
+find those assertions substantive enough to demonstrate completed work: it
+finalized `blocked`, confidence 18, with rationale that the artifacts asserted
+completion but did not visibly demonstrate the live demo or independently
+verify the item. This was a semantic rejection, not an infrastructure or hash
+failure, and no beneficiary payout was authorized.
+
+Deliverable (59 raw UTF-8 bytes):
+[`https://raw.githubusercontent.com/Bibidee/counta/5f1a523ada47aefcc7787f028483f880044c7bd1/evidence/live-deliverable.txt`](https://raw.githubusercontent.com/Bibidee/counta/5f1a523ada47aefcc7787f028483f880044c7bd1/evidence/live-deliverable.txt),
+SHA-256 `b2006a039e3ac90264b58902ea6a573fb18f8c4871f0e60af70555287d2eebe9`.
+
+Evidence (82 raw UTF-8 bytes):
+[`https://cdn.jsdelivr.net/gh/Bibidee/counta@5f1a523ada47aefcc7787f028483f880044c7bd1/evidence/live-verification.txt`](https://cdn.jsdelivr.net/gh/Bibidee/counta@5f1a523ada47aefcc7787f028483f880044c7bd1/evidence/live-verification.txt),
+SHA-256 `48d94b3537b97d678e5d6c436ce686f7837140acfbc7aeadb74caabbb39739a4`.
+
+| Step | Transaction | Finalized result |
+|---|---|---|
+| `create_milestone` | [`0xae6d2822f1ccdec33d20460f364ad6a7d74b00cd963401ded71598620adb49cc`](https://explorer-studio.genlayer.com/tx/0xae6d2822f1ccdec33d20460f364ad6a7d74b00cd963401ded71598620adb49cc) | FINALIZED / MAJORITY_AGREE / GenVM SUCCESS; status `funded`; `value_credited=true` |
+| `accept_milestone` | [`0xe6fbd27c079f5dc9ab363314ab445e868bd8750d641b3f8c12618316b96cbbab`](https://explorer-studio.genlayer.com/tx/0xe6fbd27c079f5dc9ab363314ab445e868bd8750d641b3f8c12618316b96cbbab) | FINALIZED / MAJORITY_AGREE / GenVM SUCCESS; status `active` |
+| `submit_delivery` | [`0xd00effe34bcc113fd658b0151e72e6d22c1a361c9cb5ba9f953dd9587561b002`](https://explorer-studio.genlayer.com/tx/0xd00effe34bcc113fd658b0151e72e6d22c1a361c9cb5ba9f953dd9587561b002) | FINALIZED / MAJORITY_AGREE / GenVM SUCCESS; status `submitted`; exact artifact URLs and hashes stored |
+| `review` | [`0x3c13a5acf7c17f7744e0b61039fef0fedf350a4cfa235749be9c5031a75dddd4`](https://explorer-studio.genlayer.com/tx/0x3c13a5acf7c17f7744e0b61039fef0fedf350a4cfa235749be9c5031a75dddd4) | FINALIZED / MAJORITY_AGREE / leader GenVM SUCCESS; canonical state `blocked`, confidence 18; one validator voted disagree |
+| `settle` | [`0xde71c4f4506a2570eb4291868808fac745dbc2f29353925789b76655916c2986`](https://explorer-studio.genlayer.com/tx/0xde71c4f4506a2570eb4291868808fac745dbc2f29353925789b76655916c2986) | FINALIZED / MAJORITY_AGREE; state `refund_dispatched`; `deposited=0`; sponsor dispatch `1000000000000000` wei |
+
+The canonical post-settlement read confirms the ledger was zeroed and the
+full 0.001 GEN refund was dispatched to the sponsor. The child transfer's
+recipient-credit flag was not independently recorded here, so this evidence
+does not claim `value_credited=true` for the refund. This completes a
+fail-closed refund lifecycle, not the approved beneficiary-payment lifecycle.
+
+### v0.3.1 live milestone flow — approved and beneficiary credited
+
+The second live identifier was
+`COUNTA-V031-CI-ATTEST-R2-20261005-01`. Sponsor:
+`0x2cd419603eBa593074653930Ddc4073d4FD8fc60`. Designated beneficiary:
+`0x7C65cE913F5665c11f1219048112C84CD6cb2a4B`. The sponsor deposited the
+minimum 0.001 GEN (`1000000000000000` wei); the beneficiary accepted and
+submitted one committed deliverable. Its brief requested an exact release-gate
+attestation for the frozen v0.3.1 source commit and successful GitHub Actions
+run. The semantic reviewer returned `approved`, confidence 100, with rationale
+that the deliverable identified the frozen commit and run and the committed
+GitHub API evidence confirmed `completed`, `success`, and the matching
+`head_sha`.
+
+Deliverable: [`https://raw.githubusercontent.com/Bibidee/counta/d8d814bdb126d91c3f8737bfc4ebbcbf36f45580/evidence/live-v031-release-attestation.txt`](https://raw.githubusercontent.com/Bibidee/counta/d8d814bdb126d91c3f8737bfc4ebbcbf36f45580/evidence/live-v031-release-attestation.txt),
+249 raw bytes, SHA-256
+`eceddf6026b704c79d2744f5eb4a9b343e24560e37031ba8cedbf785102618f2`.
+
+Evidence: [`https://api.github.com/repos/Bibidee/counta/actions/runs/37351550988`](https://api.github.com/repos/Bibidee/counta/actions/runs/37351550988),
+11,529 raw bytes, SHA-256
+`7a84ed7289f9d1ffad210d337268fb0ac1e795cd6a28c5aa45440c65c8e42108`.
+The checked record identified the same frozen source commit and completed
+successfully. This is a GitHub Actions API record, not a second independent
+human-authored source.
+
+| Step | Transaction | Finalized result |
+|---|---|---|
+| `create_milestone` | [`0x278cfa776516cd545d0a61f1c74cd1ae05f0906bf27430339ec86796f7ceff07`](https://explorer-studio.genlayer.com/tx/0x278cfa776516cd545d0a61f1c74cd1ae05f0906bf27430339ec86796f7ceff07) | FINALIZED / MAJORITY_AGREE / GenVM SUCCESS; funded with 0.001 GEN |
+| `accept_milestone` | [`0xe79a932b5122e7039dcb6f41d2a2c4f1600fe3b40ee26980a944804ac8c1b02d`](https://explorer-studio.genlayer.com/tx/0xe79a932b5122e7039dcb6f41d2a2c4f1600fe3b40ee26980a944804ac8c1b02d) | FINALIZED / MAJORITY_AGREE / GenVM SUCCESS; status `active` |
+| `submit_delivery` | [`0x554631f2934b4970b89f61db331d96ba996e95dbd18f331d4ddd56ae563100e4`](https://explorer-studio.genlayer.com/tx/0x554631f2934b4970b89f61db331d96ba996e95dbd18f331d4ddd56ae563100e4) | FINALIZED / MAJORITY_AGREE / GenVM SUCCESS; status `submitted`; exact URLs and hashes stored |
+| `review` | [`0xface3ba3a45512445a7ee6065c450ce68535d38fe3a23df62f0366e97c563659`](https://explorer-studio.genlayer.com/tx/0xface3ba3a45512445a7ee6065c450ce68535d38fe3a23df62f0366e97c563659) | FINALIZED / MAJORITY_AGREE / GenVM SUCCESS; status `approved`, confidence 100 |
+| `settle` | [`0x51fe741fc8af1c0b884652d19f5efabd40e492e1c28cb58362a6e43614c106f7`](https://explorer-studio.genlayer.com/tx/0x51fe741fc8af1c0b884652d19f5efabd40e492e1c28cb58362a6e43614c106f7) | FINALIZED / MAJORITY_AGREE / GenVM SUCCESS; status `payout_dispatched`, `deposited=0`; beneficiary dispatch `1000000000000000` wei |
+| Child transfer | [`0xe4a991e087fdae48922665637cab4ff8e8b537f26d1c59919bb212ea2a15bb66`](https://explorer-studio.genlayer.com/tx/0xe4a991e087fdae48922665637cab4ff8e8b537f26d1c59919bb212ea2a15bb66) | FINALIZED; contract-to-beneficiary transfer of `1000000000000000` wei; `value_credited=true` |
+
+The final canonical `get_milestone()` read returned `status=payout_dispatched`,
+`settlement=beneficiary_payout_dispatched`, `deposited=0`,
+`beneficiary_dispatched_amount=1000000000000000`, and
+`sponsor_dispatched_amount=0`. The separate child receipt confirms the
+beneficiary credit. This is the v0.3.1 happy-path proof; it does not erase or
+replace the earlier blocked-and-refunded flow.
 
 ## Historical deployed release: v0.3.0 (superseded; not v0.3.1)
 
