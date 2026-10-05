@@ -1,6 +1,30 @@
 # Counta deployment and release evidence
 
-## Current release: v0.3.0
+## Current candidate: v0.3.1 — NOT DEPLOYED
+
+v0.3.1 is a pre-deployment source candidate. It has no contract address,
+deployment transaction, deployed-source parity result, or v0.3.1 live lifecycle.
+It fixes the v0.3.0 infrastructure retry lockout, rejects all IP literals and
+single-label hostnames, and delays beneficiary alias creation until acceptance.
+Source candidate SHA-256: `9b98e0016a38e7c4ad8e613370b0667e7c4b37910e4dbaf26e99a6a1688be005`;
+source byte length: 36,535. These values describe only the current local source
+candidate and do not imply deployment or source parity.
+Do not use the historical v0.3.0 address as v0.3.1 evidence.
+
+### v0.3.1 release gate
+
+Use Python 3.12.14 with the exact dependency and transitive constraints locks.
+Require all Direct Mode tests, preflight, GenVM lint and byte-equal ABI/schema
+generation to pass, with no skips/failures. GitHub Actions must pass on the
+exact frozen contract commit. No claim is made here about branch protection
+settings; the release procedure requires checking the exact-head CI result and
+keeping the source frozen through deployment.
+
+Do not deploy this candidate in this release pass. Fresh source-parity evidence
+and new live approval, payout, outage-recovery, and refund/timeout lifecycles
+must be collected for v0.3.1 before claiming it is deployed.
+
+## Historical deployed release: v0.3.0 (superseded; not v0.3.1)
 
 | Evidence | Verified value |
 |---|---|
@@ -8,14 +32,21 @@
 | Frozen source commit | `5f1a523ada47aefcc7787f028483f880044c7bd1` |
 | Contract SHA-256 | `1c3e41f9354ae8dd682d8d7d9e5f4062ac7db8ce647eaca7c3ea27eb9808379e` |
 | Git blob SHA | `3b1baab680976c4ed380fb0dca46226a61d7ec59` |
-| Source size | 36,339 bytes locally and deployed |
+| Source size | 36,339 bytes at the frozen v0.3.0 commit and in deployed code |
 | Contract address | [`0x4235915E7ec84596239b2d29B93d1a2A982A1018`](https://explorer-studio.genlayer.com/address/0x4235915E7ec84596239b2d29B93d1a2A982A1018) |
 | Deployment transaction | [`0x5ccdb01d7cacf07dfc2ae73b2cbead5e58511c6db338abb486ff4c483c64f5ab`](https://explorer-studio.genlayer.com/tx/0x5ccdb01d7cacf07dfc2ae73b2cbead5e58511c6db338abb486ff4c483c64f5ab) |
 | Deployment result | FINALIZED / MAJORITY_AGREE / GenVM SUCCESS |
-| Source parity | VERIFIED byte-for-byte via `gen_getContractCode`; deployed and local SHA-256 and lengths equal |
-| `get_info()` | Counta 0.3.0; min confidence 75; max text 16,000; max image 2,000,000 bytes; max review/infrastructure attempts 3; retry cooldown 900s; minimum deposit `1000000000000000` wei; sponsor-scoped composite identity; sponsor-fixed exact evidence hostname; infrastructure exhaustion expires only at review deadline |
+| Source parity | VERIFIED byte-for-byte via `gen_getContractCode` against the frozen v0.3.0 local source; deployed and frozen-source SHA-256 and lengths equal |
+| `get_info()` | Counta 0.3.0; min confidence 75; max text 16,000; max image 2,000,000 bytes; max semantic/infrastructure attempts 3; retry cooldown 900s; minimum deposit `1000000000000000` wei; sponsor-scoped composite identity; sponsor-fixed exact evidence hostname; infrastructure exhaustion expires only at review deadline |
 | Frozen-commit release gate | 71 tests passed, 0 skipped, 0 failed; preflight, GenVM lint and ABI/schema passed |
 | Frozen-commit GitHub Actions | [run 37342449384](https://github.com/Bibidee/counta/actions/runs/37342449384): completed, success, exact frozen source commit |
+
+The v0.3.0 review liveness limitation was that the shared infrastructure
+failure counter stopped all reviews after three outages, even while the review
+deadline remained open. Funds were not refundable early, but a party that had
+not caused the outage could not obtain a later adjudication after provider
+recovery. v0.3.1 removes that lockout; the v0.3.0 behavior remains historical
+and is not retroactively changed by this candidate.
 
 ### v0.3.0 live lifecycle
 
@@ -52,7 +83,7 @@ The final canonical milestone read was `status=payout_dispatched`,
 child receipt independently confirms the beneficiary credit. This is a
 successful approval-and-payout proof, not a refund/timeout proof.
 
-### v0.3.0 release gate
+### Historical v0.3.0 release gate
 
 Use Python 3.12 with the checked-in transitive constraints lock:
 
@@ -69,11 +100,11 @@ lock and runs preflight on Ubuntu with the stock Direct Mode loader. Windows
 alone receives the test stdin workaround. The workflow uses verified immutable
 action commit references.
 
-The v0.3.0 contract source is frozen at the commit/hash above and remained
-unchanged through deployment and this documentation update. The later
-documentation-only commit does not change the deployed contract or its source
-parity. Re-run the release gate on the current documentation HEAD as part of
-this closeout.
+The v0.3.0 contract source was frozen at the commit/hash above and matched the
+deployed source byte-for-byte at release. The documentation-only commit
+`c821389a2a2e174356adda347bfbdcdc127d295b` did not change it. The current
+v0.3.1 source candidate is intentionally different and is not deployed; the
+v0.3.0 address continues to refer only to its historical frozen bytes.
 
 ## Historical deployment: v0.2.0 (superseded)
 

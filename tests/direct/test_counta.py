@@ -1,6 +1,7 @@
 import hashlib
 import json
 import ast
+from datetime import datetime
 from pathlib import Path
 import pytest
 
@@ -43,8 +44,9 @@ def fund(contract, direct_vm, direct_alice, direct_bob, milestone_id="C-001", va
 
 
 def submit_text(contract, direct_vm, direct_bob, milestone_id="C-001", artifact=TEXT_DELIVERABLE, evidence=EVIDENCE):
+    sponsor = direct_vm.sender
     direct_vm.sender = direct_bob
-    contract.accept_milestone(milestone_id)
+    contract.accept_milestone(public_ref(sponsor, milestone_id))
     contract.submit_delivery(
         milestone_id,
         "text",
@@ -151,7 +153,7 @@ def test_acceptance_is_beneficiary_only_locks_sponsor_cancellation_and_keeps_cre
     with direct_vm.expect_revert():
         contract.accept_milestone("C-001")
     direct_vm.sender = direct_bob
-    contract.accept_milestone("C-001")
+    contract.accept_milestone(public_ref(direct_alice, "C-001"))
     assert contract.get_milestone("C-001")["status"] == "active"
     direct_vm.sender = direct_alice
     with direct_vm.expect_revert():
@@ -370,43 +372,51 @@ def test_temporary_or_malformed_http_status_metadata_is_retryable(
     assert int(saved["deposited"]) == SPONSOR_AMOUNT
 
 
-def test_beneficiary_controlled_repeated_503_never_reaches_split(direct_vm, direct_deploy, direct_alice, direct_bob):
+def test_sponsor_three_infrastructure_failures_do_not_lock_out_beneficiary(direct_vm, direct_deploy, direct_alice, direct_bob):
     contract = new_contract(direct_vm, direct_deploy)
     fund(contract, direct_vm, direct_alice, direct_bob)
     submit_text(contract, direct_vm, direct_bob)
-    direct_vm.sender = direct_bob
-    for attempt in range(3):
+    direct_vm.sender = direct_alice
+    for attempt, timestamp in enumerate((
+        "2026-10-01T12:00:00Z", "2026-10-01T12:15:00Z", "2026-10-01T12:30:00Z",
+    )):
+        direct_vm.warp(timestamp)
+        direct_vm.clear_mocks()
         direct_vm.mock_web("https://deliverable.example/c001.txt", {"status": 503, "body": b""})
         direct_vm.mock_web("https://evidence.example/c001.txt", {"status": 200, "body": EVIDENCE})
         contract.review("C-001")
         saved = contract.get_milestone("C-001")
-        if attempt < 2:
-            assert saved["status"] == "retryable"
-            with direct_vm.expect_revert():
-                contract.review("C-001")
-            assert int(contract.get_milestone("C-001")["infrastructure_attempts"]) == attempt + 1
-            direct_vm.warp("2026-10-01T12:15:00Z" if attempt == 0 else "2026-10-01T12:30:00Z")
-        else:
-            assert saved["status"] == "retryable"
-            assert saved["last_reason"] == "infrastructure_budget_exhausted"
-            assert int(saved["infrastructure_attempts"]) == 3
-            assert int(saved["semantic_attempts"]) == 0
-            assert int(saved["deposited"]) == SPONSOR_AMOUNT
-    direct_vm.clear_mocks()
+        assert saved["status"] == "retryable"
+        assert saved["last_reason"] == "fetch_unavailable"
+        assert int(saved["infrastructure_attempts"]) == min(attempt + 1, 3)
+        assert int(saved["semantic_attempts"]) == 0
+        assert int(saved["deposited"]) == SPONSOR_AMOUNT
+        attempt_epoch = int(datetime.fromisoformat(timestamp.replace("Z", "+00:00")).timestamp())
+        assert int(saved["next_review_at"]) == attempt_epoch + 900
     with direct_vm.expect_revert():
-        contract.review("C-001")
-    assert direct_vm._web_mocks_hit == set()
+        contract.review("C-001")  # cooldown, not a permanent infrastructure lockout
     with direct_vm.expect_revert():
         contract.settle("C-001")
     with direct_vm.expect_revert():
         contract.expire("C-001")
-    direct_vm.warp("2026-10-01T18:00:00Z")
-    contract.expire("C-001")
+
+    # Provider recovers after three sponsor-triggered failures. The beneficiary
+    # can still obtain an approval after the ordinary cooldown and settle.
+    direct_vm.warp("2026-10-01T12:45:00Z")
+    direct_vm.clear_mocks()
+    configure_review(direct_vm)
+    direct_vm.sender = direct_bob
+    contract.review("C-001")
     saved = contract.get_milestone("C-001")
-    assert saved["status"] == "refund_dispatched"
-    assert int(saved["sponsor_dispatched_amount"]) == SPONSOR_AMOUNT
-    assert int(saved["beneficiary_dispatched_amount"]) == 0
-    assert saved["settlement"] == "deadline_refund_dispatched"
+    assert saved["status"] == "approved"
+    assert int(saved["semantic_attempts"]) == 0
+    assert int(saved["infrastructure_attempts"]) == 3
+    contract.settle("C-001")
+    saved = contract.get_milestone("C-001")
+    assert saved["status"] == "payout_dispatched"
+    assert int(saved["deposited"]) == 0
+    assert int(saved["beneficiary_dispatched_amount"]) == SPONSOR_AMOUNT
+    assert int(saved["sponsor_dispatched_amount"]) == 0
 
 
 def test_hash_mismatch_blocks_and_refunds(direct_vm, direct_deploy, direct_alice, direct_bob):
@@ -483,7 +493,7 @@ def test_invalid_utf8_deliverable_blocks_and_refunds(direct_vm, direct_deploy, d
     assert int(contract.get_milestone("C-001")["sponsor_dispatched_amount"]) == SPONSOR_AMOUNT
 
 
-def test_malformed_model_output_stays_non_authorizing_until_deadline_refund(direct_vm, direct_deploy, direct_alice, direct_bob):
+def test_malformed_model_output_stays_non_authorizing_then_can_recover(direct_vm, direct_deploy, direct_alice, direct_bob):
     contract = new_contract(direct_vm, direct_deploy)
     fund(contract, direct_vm, direct_alice, direct_bob)
     submit_text(contract, direct_vm, direct_bob)
@@ -501,26 +511,28 @@ def test_malformed_model_output_stays_non_authorizing_until_deadline_refund(dire
     saved = contract.get_milestone("C-001")
     assert saved["status"] == "retryable"
     assert int(saved["deposited"]) == SPONSOR_AMOUNT
-    assert saved["last_reason"] == "infrastructure_budget_exhausted"
+    assert saved["last_reason"] == "malformed_output"
+    assert int(saved["infrastructure_attempts"]) == 3
     with direct_vm.expect_revert():
-        contract.review("C-001")
+        contract.review("C-001")  # still subject to cooldown only
     with direct_vm.expect_revert():
         contract.settle("C-001")
     with direct_vm.expect_revert():
         contract.expire("C-001")
-    direct_vm.warp("2026-10-01T18:00:00Z")
-    contract.expire("C-001")
+    direct_vm.warp("2026-10-01T12:45:00Z")
+    direct_vm.clear_mocks()
+    configure_review(direct_vm)
+    contract.review("C-001")
     saved = contract.get_milestone("C-001")
-    assert saved["status"] == "refund_dispatched"
-    assert int(saved["deposited"]) == 0
-    assert int(saved["beneficiary_dispatched_amount"]) == 0
+    assert saved["status"] == "approved"
+    assert int(saved["deposited"]) == SPONSOR_AMOUNT
 
 
 def test_image_submission_is_hash_checked_and_sent_as_raw_vision_input(direct_vm, direct_deploy, direct_alice, direct_bob):
     contract = new_contract(direct_vm, direct_deploy)
     fund(contract, direct_vm, direct_alice, direct_bob)
     direct_vm.sender = direct_bob
-    contract.accept_milestone("C-001")
+    contract.accept_milestone(public_ref(direct_alice, "C-001"))
     contract.submit_delivery("C-001", "image", "https://deliverable.example/c001.png", digest(IMAGE), "https://evidence.example/c001.txt", digest(EVIDENCE), "Photographic proof of the finished item.")
     configure_review(direct_vm, artifact=IMAGE, deliverable_url="https://deliverable.example/c001.png")
     direct_vm.sender = direct_alice
@@ -565,7 +577,7 @@ def test_exact_delivery_deadline_submission_loses_to_expiry(direct_vm, direct_de
     contract = new_contract(direct_vm, direct_deploy)
     fund(contract, direct_vm, direct_alice, direct_bob)
     direct_vm.sender = direct_bob
-    contract.accept_milestone("C-001")
+    contract.accept_milestone(public_ref(direct_alice, "C-001"))
     direct_vm.warp("2026-10-04T12:00:00Z")
     with direct_vm.expect_revert():
         contract.submit_delivery("C-001", "text", "https://deliverable.example/c001.txt", digest(TEXT_DELIVERABLE), "https://evidence.example/c001.txt", digest(EVIDENCE), "summary")
@@ -628,7 +640,11 @@ def test_private_hosts_and_non_https_urls_are_rejected(direct_vm, direct_deploy,
         "https://2130706433/file", "https://0x7f000001/file", "https://0177.0.0.1/file",
         "https://10.1.2.3/file", "https://192.168.1.10/file", "https://169.254.10.1/file",
         "https://[::1]/file", "https://[::ffff:127.0.0.1]/file", "https://localhost/file",
-        "https://intranet.local/file", "https://user@example.com/file",
+        "https://intranet.local/file", "https://metadata/file", "https://internal/file",
+        "https://100.64.0.1/file", "https://100.127.255.254/file",
+        "https://224.0.0.1/file", "https://0.0.0.0/file",
+        "https://[::ffff:10.0.0.1]/file", "https://8.8.8.8/file",
+        "https://user@example.com/file",
         "https://user%40name@example.com/file", "https://example.com:8443/file",
     ):
         with direct_vm.expect_revert():
@@ -638,7 +654,8 @@ def test_private_hosts_and_non_https_urls_are_rejected(direct_vm, direct_deploy,
 @pytest.mark.parametrize("host", [
     "https://trusted.example", "trusted.example:443", "user@trusted.example",
     "trusted.example/path", "trusted..example", "-bad.example", "bad-.example",
-    "localhost", "host.local", "127.0.0.1", "2130706433", "trusted.example%2eattacker",
+    "localhost", "host.local", "127.0.0.1", "2130706433", "metadata", "internal",
+    "100.64.0.1", "trusted.example%2eattacker",
     "ümlaut.example",
 ])
 def test_invalid_sponsor_evidence_authority_rejected_at_creation(
@@ -657,10 +674,11 @@ def test_invalid_sponsor_evidence_authority_rejected_at_creation(
 def test_invariant_info_and_read_unknown(direct_vm, direct_deploy):
     contract = new_contract(direct_vm, direct_deploy)
     info = contract.get_info()
-    assert info["name"] == "Counta" and info["version"] == "0.3.0"
+    assert info["name"] == "Counta" and info["version"] == "0.3.1"
     assert info["max_review_attempts"] == "3"
     assert info["evidence_authority_model"] == "sponsor_fixed_exact_hostname"
-    assert info["infrastructure_exhaustion_action"] == "expire_only_at_review_deadline"
+    assert info["infrastructure_attempt_telemetry_cap"] == "3"
+    assert info["infrastructure_failure_policy"] == "retry_after_cooldown_until_review_deadline"
     with direct_vm.expect_revert():
         contract.get_milestone("missing")
 
@@ -811,7 +829,7 @@ def test_sponsor_evidence_authority_normalizes_exact_hostname_and_is_immutable(
     contract = new_contract(direct_vm, direct_deploy)
     fund(contract, direct_vm, direct_alice, direct_bob, "HOST-POLICY", approved_host="Evidence.Example.")
     direct_vm.sender = direct_bob
-    contract.accept_milestone("HOST-POLICY")
+    contract.accept_milestone(public_ref(direct_alice, "HOST-POLICY"))
     contract.submit_delivery(
         "HOST-POLICY", "text", "https://deliverable.example/host.txt", digest(TEXT_DELIVERABLE),
         "HTTPS://Evidence.Example.:443/record.txt", digest(EVIDENCE), "exact sponsor host",
@@ -833,7 +851,7 @@ def test_unapproved_evidence_authority_cannot_be_swapped(
     contract = new_contract(direct_vm, direct_deploy)
     fund(contract, direct_vm, direct_alice, direct_bob, "HOST-SWAP", approved_host="trusted.com")
     direct_vm.sender = direct_bob
-    contract.accept_milestone("HOST-SWAP")
+    contract.accept_milestone(public_ref(direct_alice, "HOST-SWAP"))
     with direct_vm.expect_revert():
         contract.submit_delivery(
             "HOST-SWAP", "text", "https://deliverable.example/file", digest(TEXT_DELIVERABLE),
@@ -861,8 +879,9 @@ def test_sponsor_namespaces_allow_same_local_id_without_cross_party_confusion(
     assert contract.get_milestone(ref_b)["id"] == "PROJECT-001"
     assert contract.get_milestone(ref_a)["sponsor"].lower() != contract.get_milestone(ref_b)["sponsor"].lower()
     direct_vm.sender = direct_alice
-    with direct_vm.expect_revert():
-        contract.get_milestone("PROJECT-001")  # Alice is sponsor A and beneficiary B: local alias is ambiguous.
+    # Alice's sponsor alias exists; the second milestone has only nominated
+    # her as beneficiary and cannot poison this alias before she accepts it.
+    assert contract.get_milestone("PROJECT-001")["milestone_ref"] == ref_a
 
     direct_vm.sender = direct_bob
     contract.accept_milestone(ref_a)
@@ -872,6 +891,8 @@ def test_sponsor_namespaces_allow_same_local_id_without_cross_party_confusion(
     )
     direct_vm.sender = direct_alice
     contract.accept_milestone(ref_b)
+    with direct_vm.expect_revert():
+        contract.get_milestone("PROJECT-001")  # accepted beneficiary collision is ambiguous
     contract.submit_delivery(
         ref_b, "text", "https://deliverable.example/b.txt", digest(TEXT_DELIVERABLE),
         "https://evidence-b.example/b.txt", digest(EVIDENCE), "sponsor B policy",

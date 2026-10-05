@@ -41,8 +41,9 @@ def fund(contract, direct_vm, sponsor, beneficiary, milestone_id="C-001", approv
 
 
 def activate(contract, direct_vm, beneficiary, milestone_id="C-001"):
+    sponsor = direct_vm.sender
     direct_vm.sender = beneficiary
-    contract.accept_milestone(milestone_id)
+    contract.accept_milestone(public_ref(sponsor, milestone_id))
 
 
 def submit(contract, direct_vm, beneficiary, milestone_id="C-001"):
@@ -85,6 +86,28 @@ def mock_infrastructure_failure(direct_vm):
     direct_vm.mock_web(
         "https://deliverable.example/c001.txt",
         {"status": 503, "body": b""},
+    )
+
+
+def mock_approval(direct_vm):
+    direct_vm.clear_mocks()
+    direct_vm.mock_web(
+        "https://deliverable.example/c001.txt",
+        {"status": 200, "body": TEXT_DELIVERABLE},
+    )
+    direct_vm.mock_web(
+        "https://evidence.example/c001.txt",
+        {"status": 200, "body": EVIDENCE},
+    )
+    direct_vm.mock_llm(
+        r"You are independently assessing a milestone escrow",
+        json.dumps({
+            "deliverable_match": "yes",
+            "evidence_support": "yes",
+            "risk": "no",
+            "confidence": 92,
+            "rationale": "The committed work and evidence satisfy the brief.",
+        }),
     )
     direct_vm.mock_web(
         "https://evidence.example/c001.txt",
@@ -236,7 +259,7 @@ def test_counta_has_no_inconclusive_or_split_dispatch_state(direct_vm, direct_de
         assert forbidden not in source
 
 
-def test_infrastructure_budget_exhaustion_remains_locked_until_deadline_after_prior_uncertainty(
+def test_ten_infrastructure_failures_are_non_authorizing_bounded_telemetry_and_recoverable(
     direct_vm, direct_deploy, direct_alice, direct_bob
 ):
     contract = new_contract(direct_vm, direct_deploy)
@@ -244,36 +267,125 @@ def test_infrastructure_budget_exhaustion_remains_locked_until_deadline_after_pr
     submit(contract, direct_vm, direct_bob)
     direct_vm.sender = direct_alice
 
-    mock_uncertain(direct_vm)
-    contract.review("C-001")
-    direct_vm.warp("2026-10-01T12:15:00Z")
-    mock_uncertain(direct_vm)
-    contract.review("C-001")
-    assert int(contract.get_milestone("C-001")["semantic_attempts"]) == 2
-
-    for timestamp, expected_infra in (
-        ("2026-10-01T12:30:00Z", 1),
-        ("2026-10-01T12:45:00Z", 2),
-        ("2026-10-01T13:00:00Z", 3),
-    ):
+    for index in range(10):
+        hour = 12 + (index * 15) // 60
+        minute = (index * 15) % 60
+        timestamp = f"2026-10-01T{hour:02d}:{minute:02d}:00Z"
         direct_vm.warp(timestamp)
         mock_infrastructure_failure(direct_vm)
         contract.review("C-001")
         saved = contract.get_milestone("C-001")
-        assert int(saved["semantic_attempts"]) == 2
-        assert int(saved["infrastructure_attempts"]) == expected_infra
+        assert saved["status"] == "retryable"
+        assert saved["last_reason"] == "fetch_unavailable"
+        assert int(saved["semantic_attempts"]) == 0
+        assert int(saved["infrastructure_attempts"]) == min(index + 1, 3)
+        assert int(saved["deposited"]) == SPONSOR_AMOUNT
 
     saved = contract.get_milestone("C-001")
     assert saved["status"] == "retryable"
-    assert saved["last_reason"] == "infrastructure_budget_exhausted"
     with direct_vm.expect_revert():
         contract.settle("C-001")
     with direct_vm.expect_revert():
         contract.expire("C-001")
+
+    # Ten outage observations did not consume semantic attempts or disable a
+    # later sponsor-triggered review after the 15-minute cooldown.
+    direct_vm.warp("2026-10-01T14:30:00Z")
+    mock_approval(direct_vm)
+    contract.review("C-001")
+    saved = contract.get_milestone("C-001")
+    assert saved["status"] == "approved"
+    assert int(saved["semantic_attempts"]) == 0
+    assert int(saved["infrastructure_attempts"]) == 3
+    contract.settle("C-001")
+    saved = contract.get_milestone("C-001")
+    assert saved["status"] == "payout_dispatched"
+    assert int(saved["deposited"]) == 0
+    assert int(saved["beneficiary_dispatched_amount"]) == SPONSOR_AMOUNT
+    assert int(saved["sponsor_dispatched_amount"]) == 0
+
+
+def test_beneficiary_infrastructure_failures_do_not_lock_out_sponsor(
+    direct_vm, direct_deploy, direct_alice, direct_bob
+):
+    contract = new_contract(direct_vm, direct_deploy)
+    fund(contract, direct_vm, direct_alice, direct_bob)
+    submit(contract, direct_vm, direct_bob)
+    direct_vm.sender = direct_bob
+    for timestamp in ("2026-10-01T12:00:00Z", "2026-10-01T12:15:00Z", "2026-10-01T12:30:00Z"):
+        direct_vm.warp(timestamp)
+        mock_infrastructure_failure(direct_vm)
+        contract.review("C-001")
+        saved = contract.get_milestone("C-001")
+        assert saved["status"] == "retryable"
+        assert int(saved["semantic_attempts"]) == 0
+    direct_vm.warp("2026-10-01T12:45:00Z")
+    direct_vm.sender = direct_alice
+    mock_approval(direct_vm)
+    contract.review("C-001")
+    assert contract.get_milestone("C-001")["status"] == "approved"
+    contract.settle("C-001")
+    saved = contract.get_milestone("C-001")
+    assert saved["status"] == "payout_dispatched"
+    assert int(saved["beneficiary_dispatched_amount"]) == SPONSOR_AMOUNT
+    assert int(saved["deposited"]) == 0
+
+
+def test_exact_review_deadline_rejects_review_and_allows_deadline_refund(
+    direct_vm, direct_deploy, direct_alice, direct_bob
+):
+    contract = new_contract(direct_vm, direct_deploy)
+    fund(contract, direct_vm, direct_alice, direct_bob)
+    submit(contract, direct_vm, direct_bob)
     direct_vm.warp("2026-10-01T18:00:00Z")
+    with direct_vm.expect_revert():
+        contract.review("C-001")
     contract.expire("C-001")
     saved = contract.get_milestone("C-001")
     assert saved["status"] == "refund_dispatched"
     assert saved["settlement"] == "deadline_refund_dispatched"
+    assert int(saved["deposited"]) == 0
     assert int(saved["sponsor_dispatched_amount"]) == SPONSOR_AMOUNT
     assert int(saved["beneficiary_dispatched_amount"]) == 0
+
+
+def test_nominated_beneficiary_alias_is_not_created_until_acceptance(
+    direct_vm, direct_deploy, direct_alice, direct_bob
+):
+    contract = new_contract(direct_vm, direct_deploy)
+    ref = fund(contract, direct_vm, direct_alice, direct_bob, "VICTIM-ALIAS")
+
+    direct_vm.sender = direct_bob
+    with direct_vm.expect_revert():
+        contract.get_milestone("VICTIM-ALIAS")
+    assert contract.get_milestone(ref)["status"] == "funded"
+
+    contract.accept_milestone(ref)
+    assert contract.get_milestone("VICTIM-ALIAS")["milestone_ref"] == ref
+    assert contract.get_milestone(ref)["status"] == "active"
+
+
+def test_accepted_beneficiary_collisions_are_ambiguous_but_canonical_refs_work(
+    direct_vm, direct_deploy, direct_alice, direct_bob, direct_charlie
+):
+    contract = new_contract(direct_vm, direct_deploy)
+    ref_a = fund(contract, direct_vm, direct_alice, direct_bob, "SHARED-ALIAS")
+    direct_vm.sender = direct_charlie
+    direct_vm.value = SPONSOR_AMOUNT
+    ref_b = contract.create_milestone(
+        "SHARED-ALIAS", direct_bob, "Second scoped item.", "evidence-b.example",
+        DELIVER_BY, REVIEW_WINDOW,
+    )
+    direct_vm.value = 0
+    direct_vm.sender = direct_bob
+    with direct_vm.expect_revert():
+        contract.get_milestone("SHARED-ALIAS")
+    contract.accept_milestone(ref_a)
+    assert contract.get_milestone("SHARED-ALIAS")["milestone_ref"] == ref_a
+    assert contract.get_milestone(ref_a)["status"] == "active"
+    assert contract.get_milestone(ref_b)["status"] == "funded"
+    contract.accept_milestone(ref_b)
+    with direct_vm.expect_revert():
+        contract.get_milestone("SHARED-ALIAS")
+    assert contract.get_milestone(ref_a)["milestone_ref"] == ref_a
+    assert contract.get_milestone(ref_b)["milestone_ref"] == ref_b

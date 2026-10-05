@@ -1,4 +1,4 @@
-# v0.3.0
+# v0.3.1
 # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
 """Counta: hash-bound milestone review with deterministic GEN escrow dispatch.
 
@@ -49,7 +49,7 @@ MIN_REVIEW_WINDOW = 60 * 60
 MAX_REVIEW_WINDOW = 30 * 24 * 60 * 60
 MIN_CONFIDENCE = 75
 MAX_REVIEW_ATTEMPTS = 3
-MAX_INFRASTRUCTURE_ATTEMPTS = 3
+INFRASTRUCTURE_TELEMETRY_CAP = 3
 REVIEW_RETRY_COOLDOWN = 15 * 60
 EXPECTED = "[EXPECTED]"
 ENUM_FIELDS = ("deliverable_match", "evidence_support", "risk")
@@ -166,25 +166,29 @@ def _url(value: str) -> tuple[str, str]:
             or parsed.password is not None or port not in (None, 443) or parsed.fragment):
         raise gl.vm.UserError(f"{EXPECTED} Invalid HTTPS URL")
 
-    # Reject localhost and non-public IP literals. Also reject common legacy
-    # numeric IPv4 spellings, which URL clients may interpret as private IPs.
+    # Reject localhost and every IP literal. Treating all literals uniformly
+    # avoids runtime-dependent special-use classifications and unusual mapped
+    # IPv4 forms. Also reject legacy numeric spellings that clients may parse.
     if host == "localhost" or host.endswith(".localhost") or host.endswith(".local"):
         raise gl.vm.UserError(f"{EXPECTED} Local URL target is not allowed")
-    if re.fullmatch(r"(?:[0-9]+|0x[0-9a-f]+)(?:\.(?:[0-9]+|0x[0-9a-f]+))*", host):
-        try:
-            address = ipaddress.ip_address(host)
-        except ValueError:
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        if re.fullmatch(r"(?:[0-9]+|0x[0-9a-f]+)(?:\.(?:[0-9]+|0x[0-9a-f]+))*", host):
             raise gl.vm.UserError(f"{EXPECTED} Non-canonical IP URL target")
+    else:
         mapped = getattr(address, "ipv4_mapped", None)
         if mapped is not None:
             address = mapped
-        if (address.is_private or address.is_loopback or address.is_link_local
-                or address.is_reserved or address.is_multicast or address.is_unspecified):
-            raise gl.vm.UserError(f"{EXPECTED} Non-public IP URL target")
+        # Public IP literals are unnecessary for content-addressed evidence;
+        # rejecting all also covers CGNAT, private, loopback and mapped forms.
+        raise gl.vm.UserError(f"{EXPECTED} IP literal URL targets are not allowed")
     if (not re.fullmatch(r"[a-z0-9.-]+", host) or ".." in host
             or host.startswith(".") or host.endswith(".") or len(host) > 253):
         raise gl.vm.UserError(f"{EXPECTED} Invalid URL hostname")
     labels = host.split(".")
+    if len(labels) < 2:
+        raise gl.vm.UserError(f"{EXPECTED} Single-label URL hostname is not allowed")
     if any(not label or len(label) > 63 or label.startswith("-") or label.endswith("-") for label in labels):
         raise gl.vm.UserError(f"{EXPECTED} Invalid URL hostname")
     return result, host
@@ -201,6 +205,8 @@ def _evidence_host_policy(value: str) -> str:
             or not re.fullmatch(r"[a-z0-9.-]+", host) or ".." in host):
         raise gl.vm.UserError(f"{EXPECTED} Invalid approved evidence hostname")
     labels = host.split(".")
+    if len(labels) < 2:
+        raise gl.vm.UserError(f"{EXPECTED} Single-label evidence hostname is not allowed")
     if any(not label or len(label) > 63 or label.startswith("-") or label.endswith("-") for label in labels):
         raise gl.vm.UserError(f"{EXPECTED} Invalid approved evidence hostname")
     if re.fullmatch(r"(?:[0-9]+|0x[0-9a-f]+)(?:\.(?:[0-9]+|0x[0-9a-f]+))*", host):
@@ -476,6 +482,14 @@ class Counta(gl.Contract):
             raise gl.vm.UserError(f"{EXPECTED} Milestone not found")
         return item
 
+    def _record_party_alias(self, party: Address, local_id: str, milestone_ref: str) -> None:
+        alias_key = party.as_hex.lower() + ":" + local_id
+        existing = self.party_aliases.get(alias_key)
+        if existing is None:
+            self.party_aliases[alias_key] = milestone_ref
+        elif existing != milestone_ref:
+            self.party_aliases[alias_key] = "!ambiguous!"
+
     @gl.public.write.payable
     def create_milestone(
         self, milestone_id: str, beneficiary: str, brief: str,
@@ -532,16 +546,9 @@ class Counta(gl.Contract):
             settlement="",
             review_attempts=u256(0),
         )
-        # Party-local aliases preserve ergonomic calls for either counterparty.
-        # Collisions become unusable aliases, never overwrite another record;
-        # the composite milestone_ref remains unambiguous and always works.
-        for party in (sponsor, beneficiary_address):
-            alias_key = party.as_hex.lower() + ":" + milestone_id
-            existing = self.party_aliases.get(alias_key)
-            if existing is None:
-                self.party_aliases[alias_key] = milestone_ref
-            elif existing != milestone_ref:
-                self.party_aliases[alias_key] = "!ambiguous!"
+        # A nominated beneficiary cannot have their convenience namespace
+        # modified before acceptance. The canonical reference always works.
+        self._record_party_alias(sponsor, milestone_id, milestone_ref)
         return milestone_ref
 
     @gl.public.write
@@ -552,6 +559,7 @@ class Counta(gl.Contract):
         if _now() >= int(milestone.deliver_by):
             raise gl.vm.UserError(f"{EXPECTED} Acceptance deadline passed")
         # deliver_by remains fixed from creation; acceptance never extends it.
+        self._record_party_alias(milestone.beneficiary, milestone.id, _public_ref(milestone.sponsor, milestone.id))
         milestone.status = ACTIVE
 
     @gl.public.write
@@ -603,9 +611,6 @@ class Counta(gl.Contract):
         infrastructure_attempts = int(milestone.infrastructure_attempts)
         if semantic_attempts >= MAX_REVIEW_ATTEMPTS:
             raise gl.vm.UserError(f"{EXPECTED} Semantic review attempts exhausted")
-        if infrastructure_attempts >= MAX_INFRASTRUCTURE_ATTEMPTS:
-            raise gl.vm.UserError(f"{EXPECTED} Infrastructure review attempts exhausted")
-
         # Copy storage-backed fields before entering nondeterministic execution.
         snapshot = {
             "brief": str(milestone.brief),
@@ -664,20 +669,17 @@ class Counta(gl.Contract):
         self._record_infrastructure_failure(milestone, infrastructure_attempts, now, reason)
 
     def _record_infrastructure_failure(self, milestone: Milestone, attempts: int, now: int, reason: str) -> None:
-        attempts += 1
+        # Keep bounded telemetry only. This count never limits an otherwise
+        # timely review; outage failures cannot consume the beneficiary's
+        # opportunity for adjudication after the provider recovers.
+        attempts = min(attempts + 1, INFRASTRUCTURE_TELEMETRY_CAP)
         milestone.infrastructure_attempts = u256(attempts)
         milestone.last_reason = reason[:64]
-        # Fetch/provider/malformed-output failures are non-authorizing. They do
-        # not become an economic verdict or make the sponsor refund settleable;
-        # after budget exhaustion, only review-deadline expiry can refund.
-        if attempts >= MAX_INFRASTRUCTURE_ATTEMPTS:
-            # Exhaustion stops further provider calls but is not an economic
-            # verdict. Funds remain locked until deterministic deadline expiry.
-            milestone.status = RETRYABLE
-            milestone.last_reason = "infrastructure_budget_exhausted"
-        else:
-            milestone.status = RETRYABLE
-            milestone.next_review_at = u256(now + REVIEW_RETRY_COOLDOWN)
+        # Infrastructure never authorizes payment or early refund. Every
+        # failure applies the same cooldown and remains retryable until the
+        # fixed review deadline; only expire() can refund unresolved work then.
+        milestone.status = RETRYABLE
+        milestone.next_review_at = u256(now + REVIEW_RETRY_COOLDOWN)
 
     @gl.public.write
     def settle(self, milestone_id: str) -> None:
@@ -787,16 +789,16 @@ class Counta(gl.Contract):
     def get_info(self) -> dict:
         return {
             "name": "Counta",
-            "version": "0.3.0",
+            "version": "0.3.1",
             "min_confidence": str(MIN_CONFIDENCE),
             "max_text_artifact_bytes": str(MAX_TEXT_BYTES),
             "max_image_artifact_bytes": str(MAX_IMAGE_BYTES),
             "max_review_attempts": str(MAX_REVIEW_ATTEMPTS),
-            "max_infrastructure_attempts": str(MAX_INFRASTRUCTURE_ATTEMPTS),
+            "infrastructure_attempt_telemetry_cap": str(INFRASTRUCTURE_TELEMETRY_CAP),
             "review_retry_cooldown_seconds": str(REVIEW_RETRY_COOLDOWN),
             "min_deposit": str(MIN_DEPOSIT),
             "milestone_capacity": "unbounded_by_contract",
             "identity_model": "sponsor_scoped_composite_reference",
             "evidence_authority_model": "sponsor_fixed_exact_hostname",
-            "infrastructure_exhaustion_action": "expire_only_at_review_deadline",
+            "infrastructure_failure_policy": "retry_after_cooldown_until_review_deadline",
         }

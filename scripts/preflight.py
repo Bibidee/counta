@@ -9,6 +9,8 @@ import tempfile
 
 
 ROOT = Path(__file__).resolve().parents[1]
+EXPECTED_VERSION = "0.3.1"
+EXPECTED_CONTRACT_SHA256 = "9b98e0016a38e7c4ad8e613370b0667e7c4b37910e4dbaf26e99a6a1688be005"
 CONTRACTS = ROOT / "contracts"
 SOURCES = sorted(CONTRACTS.glob("*.py"))
 if len(SOURCES) != 1 or SOURCES[0].name != "counta.py":
@@ -21,6 +23,14 @@ header = raw.decode("utf-8").splitlines()[0].strip()
 version_match = re.fullmatch(r"# v(\d+\.\d+\.\d+)", header)
 if not version_match:
     raise SystemExit("contract version header is missing or malformed")
+if version_match.group(1) != EXPECTED_VERSION:
+    raise SystemExit(f"release gate expects Counta {EXPECTED_VERSION}")
+contract_sha256 = hashlib.sha256(raw).hexdigest()
+if contract_sha256 != EXPECTED_CONTRACT_SHA256:
+    raise SystemExit(
+        "frozen contract source hash mismatch: "
+        f"expected {EXPECTED_CONTRACT_SHA256}, got {contract_sha256}"
+    )
 subprocess.run([sys.executable, "-m", "compileall", "-q", "contracts", "tests"], cwd=ROOT, check=True)
 
 lint = shutil.which("genvm-lint") or shutil.which("genvm-lint.exe")
@@ -56,7 +66,6 @@ if not match:
 passed, skipped, failed = (int(value or 0) for value in match.groups())
 if skipped or failed:
     raise SystemExit(f"release tests must not skip or fail: passed={passed}, skipped={skipped}, failed={failed}")
-contract_sha256 = hashlib.sha256(raw).hexdigest()
 print("contract_version=" + version_match.group(1))
 print("contract_sha256=" + contract_sha256)
 print("contract_source_bytes=" + str(len(raw)))

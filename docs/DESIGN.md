@@ -1,10 +1,17 @@
-# Counta protocol design (v0.3.0 candidate)
+# Counta protocol design (v0.3.1 candidate)
 
 Counta holds sponsor-provided GEN against one fixed milestone. The sponsor
 commits the parties, brief, delivery deadline, review window and exact allowed
 evidence hostname before beneficiary acceptance. A single hash-bound submission
 is independently fetched and semantically assessed through GenLayer. Only
 deterministic state logic releases funds.
+
+v0.3.0 is the historical deployed release at
+`0x4235915E7ec84596239b2d29B93d1a2A982A1018`; its approval/payout evidence is
+preserved in `docs/DEPLOYMENT.md`. That version used a shared three-failure
+infrastructure ceiling: after three temporary failures, further review was
+locked out until deadline expiry. v0.3.1 removes that liveness lockout. The
+v0.3.1 source described here is a candidate only and is not deployed.
 
 ## Identity and evidence authority
 
@@ -17,11 +24,14 @@ canonical reference derived from the normalized sponsor address and local ID:
 
 `create_milestone` returns that canonical reference. Subsequent methods accept
 it, so integrations never need to guess which sponsor namespace a local name
-means. Party-local convenience lookup is maintained separately for sponsor and
-beneficiary calls; if the same party's local alias collides, that alias becomes
-ambiguous and callers must use the composite reference. The scoped storage key
-prevents unrelated wallets from reserving another sponsor's ID. Historical
-records are not deleted.
+means. The sponsor alias is registered at creation. A beneficiary alias is
+registered only when the named beneficiary accepts; until then the beneficiary
+must use the canonical reference. If an accepted party-local alias collides,
+that alias becomes ambiguous and callers must use the composite reference.
+This prevents an unrelated sponsor from poisoning a wallet's alias merely by
+nominating that wallet as beneficiary. The scoped storage key prevents
+unrelated wallets from reserving another sponsor's ID. Historical records are
+not deleted.
 
 When creating the milestone, the sponsor chooses one exact evidence hostname.
 It is normalized to lowercase and strips one or more trailing dots; schemes,
@@ -52,8 +62,7 @@ contents are accurate or independently authored.
 | `submitted` / `retryable` | Deterministic integrity failure | `blocked` | Full sponsor refund becomes settleable |
 | `submitted` / `retryable` | Valid analysis is semantically uncertain, attempts 1–2 | `retryable` | Funds stay locked; cooldown applies |
 | `retryable` | Third valid semantic uncertainty result | `blocked` | Full sponsor refund becomes settleable |
-| `submitted` / `retryable` | Infrastructure/format/consensus failure, attempts 1–2 | `retryable` | Funds stay locked; cooldown applies |
-| `retryable` | Third infrastructure failure | `retryable` | Review budget exhausted; no more nondeterministic reviews; funds stay locked |
+| `submitted` / `retryable` | Infrastructure/format/consensus failure | `retryable` | Funds stay locked; cooldown applies; review remains available until deadline |
 | `submitted` / `retryable` | `now >= review_deadline` | `refund_dispatched` | Permissionless full sponsor refund; no web/LLM call |
 | `approved` | Anyone calls `settle` once | `payout_dispatched` | Full ledger debited, beneficiary transfer emitted |
 | `blocked` | Anyone calls `settle` once | `refund_dispatched` | Full ledger debited, sponsor transfer emitted |
@@ -103,15 +112,18 @@ with sponsor refund eligibility (`semantic_uncertainty_sponsor_refund`).
 
 Infrastructure includes HTTP 408, 429, 5xx, network exceptions, malformed HTTP
 status metadata, LLM execution failure, malformed structured output, invalid
-consensus returns and observation failures. These outcomes use a separate
-maximum of three finalized attempts.
-After the third, state remains `retryable` with
-`last_reason=infrastructure_budget_exhausted`; subsequent `review()` calls are
-rejected, but `settle()` is not allowed and the funds remain escrowed. Only
-permissionless `expire()` at `now >= review_deadline` refunds the sponsor. This
-means neither sponsor nor beneficiary can accelerate an economic refund by
-repeatedly causing temporary provider failures. A permanent outage still has a
-deterministic deadline recovery path.
+consensus returns and observation failures. They increment a telemetry counter
+capped at three, but that counter is never authorization-critical and never
+blocks another review.
+Every infrastructure failure remains `retryable`, stores its reason, and sets
+`next_review_at=now + 900 seconds`. Either party may retry after cooldown while
+`now < review_deadline`, even after ten or more failures. These failures remain
+non-authorizing, do not change semantic attempts, and do not enable settlement.
+After provider recovery, a valid later review can still approve before the
+deadline. `settle()` remains unavailable while retryable; only permissionless
+`expire()` at `now >= review_deadline` refunds unresolved funds. Retries never
+extend the fixed deadline. At exact equality, review is rejected and expiry is
+allowed.
 
 Deterministic artifact-integrity failures (non-retryable HTTP response, empty
 or oversized content, invalid response body, hash mismatch, invalid UTF-8 or
@@ -172,15 +184,19 @@ state before retries or settlement.
 ## URL and storage limitations
 
 URLs require HTTPS, allow only port 443, reject credentials and fragments, and
-apply static local/private-IP checks. Static syntax validation cannot establish
-DNS resolution, prevent DNS rebinding, or inspect the complete redirect chain
-if the platform follows redirects. Immutable URLs and integration-level public
-host checks are recommended. Distinct CDN hostnames are not proof of
-independence.
+reject every IP literal, including public addresses, IPv4-mapped IPv6, private,
+loopback, link-local, multicast, unspecified, reserved, and shared CGNAT
+addresses such as `100.64.0.0/10`. DNS hostnames require at least two labels;
+single-label names such as `metadata` and `internal` are rejected. These syntax
+checks cannot establish public DNS resolution, prevent DNS rebinding, or inspect
+the complete redirect chain if the platform follows redirects. Immutable URLs
+and integration-level public-host checks are recommended. Distinct CDN
+hostnames are not proof of independence.
 
 There is no lifetime milestone cap. Persistent milestone records are retained;
 party-local aliases are also retained so parties can use an unambiguous local
-ID conveniently. Alias conflicts are marked ambiguous rather than redirected;
-the composite reference always identifies the intended record. Storage growth
-and chain-level capacity/cost remain practical limits. No cleanup/delete path
-can erase historical accounting.
+ID conveniently. Sponsor aliases exist at creation; beneficiary aliases are
+created only on acceptance. Alias conflicts are marked ambiguous rather than
+redirected; the composite reference always identifies the intended record.
+Storage growth and chain-level capacity/cost remain practical limits. No
+cleanup/delete path can erase historical accounting.
