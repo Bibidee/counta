@@ -1,0 +1,137 @@
+{
+  "ctor": {
+    "params": [],
+    "kwparams": {}
+  },
+  "methods": {
+    "cancel": {
+      "params": [
+        [
+          "milestone_id",
+          "string"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "create_milestone": {
+      "params": [
+        [
+          "milestone_id",
+          "string"
+        ],
+        [
+          "beneficiary",
+          "string"
+        ],
+        [
+          "brief",
+          "string"
+        ],
+        [
+          "deliver_by",
+          "int"
+        ],
+        [
+          "review_window",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": true
+    },
+    "expire": {
+      "params": [
+        [
+          "milestone_id",
+          "string"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "get_info": {
+      "params": [],
+      "kwparams": {},
+      "readonly": true,
+      "ret": "dict"
+    },
+    "get_milestone": {
+      "params": [
+        [
+          "milestone_id",
+          "string"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": true,
+      "ret": "dict"
+    },
+    "review": {
+      "params": [
+        [
+          "milestone_id",
+          "string"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "settle": {
+      "params": [
+        [
+          "milestone_id",
+          "string"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "submit_delivery": {
+      "params": [
+        [
+          "milestone_id",
+          "string"
+        ],
+        [
+          "artifact_kind",
+          "string"
+        ],
+        [
+          "deliverable_url",
+          "string"
+        ],
+        [
+          "deliverable_hash",
+          "string"
+        ],
+        [
+          "evidence_url",
+          "string"
+        ],
+        [
+          "evidence_hash",
+          "string"
+        ],
+        [
+          "summary",
+          "string"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    }
+  }
+}
