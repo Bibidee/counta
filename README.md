@@ -98,11 +98,16 @@ contract source, not a fake GenLayer module.
 
 ## Current release status
 
-- Version: `0.1.0` (pre-deployment candidate)
+- Version: `0.1.0`
 - Deployable sources: exactly one, `contracts/counta.py`
-- Deployment: **not deployed**
-- Live GEN transfer / live semantic consensus: **not yet verified**
-- Deployment/source parity: **not applicable until deployment**
+- Studionet contract: [`0xF9e67Ff6f8a156a5357Ae8802402E11814B8887b`](https://explorer-studio.genlayer.com/address/0xF9e67Ff6f8a156a5357Ae8802402E11814B8887b)
+- Deployment transaction: [`0x70a708646708dc4cc171a49f79eb1dfe6c41e13ff02218fd9e826ae2906d2272`](https://explorer-studio.genlayer.com/tx/0x70a708646708dc4cc171a49f79eb1dfe6c41e13ff02218fd9e826ae2906d2272)
+- Deployment: `FINALIZED`, `MAJORITY_AGREE`, GenVM `SUCCESS`
+- Source SHA-256: `d27387ed2f3522a37a642639221b840b9b9faf5426e2f0c079cbbf2a3addc4d5`
+- Source parity: byte-for-byte verified using `gen_getContractCode` (28,803 bytes)
+- `get_info()`: Counta `0.1.0`, minimum deposit `1000000000000000` wei, minimum confidence `75`
+- Release checks: 26 Direct Mode tests passed; lint, schema, and preflight passed; [GitHub Actions](https://github.com/Bibidee/counta/actions/runs/37259378417) passed
+- Live milestone review and escrow payout: **not yet verified**
 
 See [Design](docs/DESIGN.md) and [Deployment](docs/DEPLOYMENT.md). Do not
-represent local mocked tests as live network evidence.
+represent local mocked tests as live milestone or payout evidence.
