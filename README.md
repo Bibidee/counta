@@ -1,137 +1,124 @@
 # Counta
 
 Counta is a standalone GenLayer Intelligent Contract primitive for milestone
-evidence escrow. A sponsor funds a fixed brief and names a beneficiary. The
-beneficiary accepts the terms, then submits one text or image deliverable and
-textual evidence committed by exact-byte SHA-256 hashes. Validators independently
-fetch and verify the artifacts before semantically assessing the deliverable.
-Deterministic contract logic controls authorization, review budgets, deadlines,
-escrow accounting and transfer dispatch.
+evidence escrow. A sponsor fixes the beneficiary, brief, amount, deadlines, and
+one exact evidence-authority hostname before the beneficiary accepts. The
+beneficiary submits one text or image deliverable and text evidence, both bound
+to SHA-256 hashes. Validators independently retrieve and verify those exact
+bytes, then semantically assess the submission. Deterministic contract logic
+alone decides whether the complete escrow is dispatched to the beneficiary or
+refunded to the sponsor.
 
-Counta is an escrow primitive—not a frontend, marketplace, identity provider,
+Counta is an escrow primitive, not a frontend, marketplace, identity provider,
 or guarantee that work is truthful or legally compliant.
 
 ## Why GenLayer?
 
-Ordinary deterministic contract code cannot reliably decide whether an
-unstructured file, photograph or supporting evidence substantively satisfies a
-natural-language milestone brief. Counta uses GenLayer's independent validator
-observations and semantic review for that narrow judgment. No single off-chain
-decision service is trusted to authorize payout. The contract still does not
-eliminate validator disagreement, unavailable providers or `UNDETERMINED`
-consensus outcomes.
+Ordinary deterministic contract code cannot reliably judge whether a photograph,
+document, or other unstructured deliverable satisfies a natural-language brief.
+Counta uses GenLayer's independent validator execution to fetch the committed
+artifacts and perform that bounded semantic judgment. A single off-chain model
+or centralized verifier could selectively approve evidence; Counta instead
+requires validators to independently retrieve the exact hash-bound materials
+and agree on the authorization outcome. No one model's rationale authorizes
+payment. This still cannot eliminate model fallibility, provider outages,
+validator disagreement, or protocol-level `UNDETERMINED` outcomes.
+
+## v0.3.0 candidate policy
+
+- Sponsor-fixed evidence authority: creation commits one normalized DNS
+  hostname. Beneficiaries may submit evidence only from that exact hostname;
+  no wildcards or subdomain matching are used.
+- Sponsor-scoped milestone identity: the local ID is unique per sponsor. The
+  returned canonical reference is `0x<sponsor-address>:<local-id>`. Party-local
+  convenience lookup works only where unambiguous; use the composite reference
+  for integrations and shared IDs.
+- Strict payment rule: affirmative approval dispatches 100% of the escrow to
+  the beneficiary. Semantic rejection, deterministic artifact-integrity failure,
+  and exhausted semantic uncertainty dispatch 100% to the sponsor. No split or
+  Counta-level inconclusive state exists.
+- Infrastructure failures—including 408, 429, 5xx, network/LLM errors, malformed
+  model output, and failed consensus returns—never approve and never make funds
+  immediately refundable. Three finalized failures stop further review attempts;
+  the escrow stays locked until permissionless `expire()` at the fixed review
+  deadline, then the full balance is returned to the sponsor.
+- Prompt inputs are one canonical JSON data block. Brief, summary, evidence,
+  URLs, text deliverable, and visible image words are all untrusted content, not
+  reviewer instructions. Image evidence is raw PNG/JPEG input; the evaluator is
+  told not to treat visible words as instructions.
+- Raw response bytes are checked against SHA-256 before decoding. The digest
+  binds bytes, not authorship, truth, DNS ownership, or correctness.
+- Validator equivalence compares the deterministic economic outcome. Each
+  validator must independently pass the exact approval tuple and confidence
+  threshold for an approval; rationale and confidence values need not match.
+  Integrity failures cannot be equivalent to infrastructure errors.
+- Terminal names are `payout_dispatched` and `refund_dispatched`: Counta records
+  a transfer dispatch, not proof of child-transfer credit. Integrators must
+  inspect the child receipt and `value_credited` where exposed.
 
 ## Lifecycle
 
-1. **Fund:** sponsor calls payable `create_milestone`; exact `gl.message.value`
-   becomes the escrow ledger.
-2. **Accept:** only the named beneficiary may call `accept_milestone`. The sponsor
-   can cancel only before this acceptance. The delivery deadline is fixed at
-   creation and is not extended by acceptance.
-3. **Submit:** accepted beneficiary submits once, strictly before `deliver_by`,
-   committing distinct-host HTTPS URLs and SHA-256 hashes.
-4. **Review:** only sponsor or beneficiary may trigger review. Retries have a
-   15-minute cooldown and separate bounded semantic/infrastructure counters.
-5. **Dispatch:** only affirmative approval sends the full ledger to the
-   beneficiary. Rejection, exhausted infrastructure failures, and exhausted
-   semantic uncertainty refund the full ledger to the sponsor. All state debits
-   happen before external transfer messages.
-6. **Recover:** unaccepted/unsubmitted delivery expiry refunds the sponsor.
-   Review-window expiry also refunds the sponsor if no accepted approval or
-   rejection was reached.
+1. Sponsor funds `create_milestone(local_id, beneficiary, brief,
+   approved_evidence_host, deliver_by, review_window)`. It returns the canonical
+   sponsor-scoped `milestone_ref`.
+2. The named beneficiary accepts before the fixed delivery deadline.
+3. That beneficiary submits exactly once, before `deliver_by`, with a committed
+   text/image URL and hash, evidence URL and hash, and bounded summary. The
+   evidence hostname must exactly equal the sponsor's creation-time policy.
+4. Sponsor or beneficiary can trigger review. Retry cooldown and semantic and
+   infrastructure attempt counters are deterministic and independent.
+5. An affirmative consensus result allows permissionless one-time settlement
+   to dispatch the entire ledger to the beneficiary. A semantic/integrity block
+   permits full sponsor refund. Infrastructure exhaustion does not settle;
+   only fixed-deadline expiry refunds it.
 
-## Security and accounting
+## Trust and platform boundaries
 
-- Raw response bytes are SHA-256 checked before text decoding or image review.
-  Hash mismatch, bad HTTP status, empty/oversized content, invalid UTF-8 and
-  unsupported images fail closed and cannot approve.
-- Approval requires `deliverable_match=yes`, `evidence_support=yes`, `risk=no`,
-  and confidence at least 75 in each validator's own analysis. Validators agree
-  on the deterministic Counta outcome (`approved`, `blocked`, or `retryable`),
-  not matching rationale, confidence numbers, or diagnostic enum details.
-  The stored leader confidence is descriptive, while each validator's confidence
-  is used only for that validator's own 75-point approval gate. Rationale is
-  informational and never controls authorization. Missing/invalid confidence is
-  normalized to zero; malformed decision enums or unparseable output fail closed.
-- Artifact and evidence contents are untrusted prompt data. Images are raw PNG
-  or JPEG only; text and evidence must be UTF-8.
-- Infrastructure failures and malformed model output consume only the separate
-  infrastructure budget. After three finalized such failures, the milestone is
-  blocked and sponsor-refund eligible. Valid semantic uncertainty has its own
-  three-attempt budget: the first two results remain retryable after cooldown;
-  the third blocks and makes the full escrow sponsor-refund eligible. Neither
-  uncertainty nor infrastructure failure can cause beneficiary payment.
-- The beneficiary must accept before sponsor cancellation is locked. `deliver_by`
-  is measured from creation; submission is valid only while `now < deliver_by`,
-  while expiry is valid at `now >= deliver_by`. Review follows the same strict
-  boundary at `review_deadline`.
-- Contract-level milestone count has no fixed lifetime cap. Historical records
-  remain stored, so chain/storage limits and costs still apply.
-- Terminal statuses say `*_dispatched`, not “paid” or “settled”. Counta debits
-  its escrow ledger and emits external GEN transfer messages, but cannot observe
-  a recipient's child-transfer credit through a reliable callback. Integrators
-  must inspect each child transaction/result, including `value_credited`, before
-  treating the beneficiary or sponsor as paid.
-- HTTPS syntax checks cannot guarantee public DNS resolution or safe redirect
-  behavior at every validator. SHA-256 proves byte identity, not provenance or
-  truth. Model confidence is not a calibrated probability.
-
-## Integrator safeguards for platform boundaries
-
-These are operational requirements, not guarantees the contract can create:
-
-- **Artifact destinations:** integrators should admit only expected public HTTPS
-  hosts and immutable, commit-pinned paths before calling Counta. Avoid redirect
-  URLs and user-controlled shorteners. Counta validates URL syntax and rejects
-  private IP literals, but GenLayer's current web response does not expose a
-  redirect chain/final URL or a redirect-disable option to the contract; DNS
-  resolution and redirect destinations therefore remain platform/network trust
-  boundaries. Exact-byte hashes still make changed content fail closed.
-- **Consensus:** wait for the canonical transaction status. `UNDETERMINED` is
-  not an application verdict and does not authorize settlement; inspect the
-  milestone state before retrying, and respect the contract's retry cooldown and
-  attempt budgets. Never reinterpret a missing/undetermined result as approval.
-- **Transfers:** treat a terminal `*_dispatched` state as an emitted payout or
-  refund instruction, not proof of recipient credit. Follow the parent
-  transaction's child transfer to its final result and verify `value_credited`
-  where exposed. Do not submit a second settlement or infer a refund after an
-  ambiguous/pending child result; resolve it from the canonical receipt first.
-- **Storage:** plan for permanent on-chain history and its cost. Keep an
-  off-chain indexed archive for search/analytics, but treat chain state and
-  finalized receipts as authoritative. For independent workloads, consider
-  separate Counta deployments/cohorts so one deployment's history and growth
-  are operationally bounded; this does not erase historical chain data.
+- HTTPS syntax checks reject credentials, fragments, unsupported ports, local
+  names and non-public IP literals. Static checks cannot guarantee DNS answers
+  or redirect behavior; GenLayer's web response does not expose a redirect
+  chain/final URL or a redirect-disable control.
+- A hostname selected by a sponsor expresses the sponsor's evidence-authority
+  policy, not proof of independent authorship. Distinct hostnames/CDNs are not
+  proof of independent sources.
+- `UNDETERMINED` and other protocol outcomes are not Counta verdicts and never
+  authorize payment. Integrators must read canonical milestone state before
+  acting and obey deadlines/cooldowns.
+- Milestone history is retained. There is no lifetime cap, but practical usage
+  remains subject to chain storage capacity and costs.
+- A `*_dispatched` state does not prove that the child transfer credited the
+  recipient. Follow the child receipt to finality and verify `value_credited`.
 
 ## Release status
 
-- Current source: **v0.2.0**, deployed to Studionet at
-  [`0x8E1C18c660bf14d684ea5C1827D8d99BE27442f7`](https://explorer-studio.genlayer.com/address/0x8E1C18c660bf14d684ea5C1827D8d99BE27442f7).
-- Frozen source commit: `dea00c4e656f74958ae3596c0de0934bae652b39`; source SHA-256:
-  `2fb1e76316fa4ae36ed3bbb3986cc2f4f4110dbef126e4706d520ad748b96b2a`.
-- Deployment [`0xbc0797477e26d1f0247ef91c301ed5a3b0a758bff89e50861521717b8949e485`](https://explorer-studio.genlayer.com/tx/0xbc0797477e26d1f0247ef91c301ed5a3b0a758bff89e50861521717b8949e485)
-  finalized with `MAJORITY_AGREE` and GenVM `SUCCESS`. Retrieved deployed source
-  matched the local 30,854 bytes byte-for-byte.
-- Deployable contract sources: exactly `contracts/counta.py`.
-- No frontend or additional trusted service is required.
-- Live v0.2.0 lifecycle completed: funded → accepted → submitted → approved →
-  payout dispatched. The beneficiary child transfer finalized with
-  `value_credited=true`; the canonical milestone ledger is zero. Transaction
-  details are recorded in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
-
-Historical v0.1.0 deployment and its verified live lifecycle are preserved in
-[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Do not present that address, old source
-hash or lifecycle as proof of v0.2.0.
+**v0.3.0 is a pre-deployment candidate and is not deployed.** The Studionet
+deployment at
+[`0x8E1C18c660bf14d684ea5C1827D8d99BE27442f7`](https://explorer-studio.genlayer.com/address/0x8E1C18c660bf14d684ea5C1827D8d99BE27442f7)
+is historical v0.2.0 only and does not contain the v0.3.0 changes. Its exact
+source, deployment, and live lifecycle evidence remain in
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Do not use it as v0.3.0 parity or
+deployment evidence.
 
 ## Build and test
 
-Use Python 3.12 and pinned dependencies:
+Use Python 3.12 and the exact constraints lock:
 
 ```powershell
-python -m pip install -r requirements.txt
+python -m pip install -r requirements.txt -c requirements-lock.txt
 python -m pytest tests/direct -q
 python scripts/preflight.py
 ```
 
-Preflight compiles the source/tests, runs GenVM lint, regenerates and compares
-the ABI against the committed artifact, and executes the official pinned
-GenLayer Direct Mode tests against the actual contract. CI runs the same gate.
+Preflight verifies the single deployable source, syntax/compilation, GenVM lint,
+generated ABI byte equality, and the complete Direct Mode suite. CI runs this
+same gate on Ubuntu using the unmodified stock Direct Mode loader; the test-only
+stdin workaround is limited to Windows.
+
+## Release acceptance checklist
+
+Before freezing or deploying v0.3.0: clean tree; all tests/preflight/lint/schema
+pass; GitHub Actions succeeds on the exact release commit; record the source
+SHA-256 and tag the frozen release; deploy only that tagged source; retrieve and
+byte-compare deployed source; verify `get_info()`; run real approval and refund
+lifecycle evidence; and verify each child transfer receipt and `value_credited`.
+This repository currently records no v0.3.0 deployment or live lifecycle.

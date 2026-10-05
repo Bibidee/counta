@@ -1,11 +1,15 @@
 from gltest.direct import sdk_loader
+import sys
 
 # Keep tests pinned to the contract's py-genlayer dependency.
 sdk_loader.get_latest_version = lambda: "v0.2.12"
 
 
 def pytest_configure(config):
+    if sys.platform != "win32":
+        return
     # Work around the pinned Windows loader's temporary-stdin unlink behavior.
+    # Ubuntu/Linux CI always exercises the official unmodified Direct Mode path.
     import os
     import tempfile
     from gltest.direct import loader

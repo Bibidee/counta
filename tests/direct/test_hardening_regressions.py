@@ -16,22 +16,28 @@ def digest(raw):
     return "0x" + hashlib.sha256(raw).hexdigest()
 
 
+def public_ref(sponsor, local_id):
+    return "0x" + sponsor.hex().lower() + ":" + local_id
+
+
 def new_contract(direct_vm, direct_deploy):
     direct_vm.warp(NOW)
     return direct_deploy(CONTRACT)
 
 
-def fund(contract, direct_vm, sponsor, beneficiary, milestone_id="C-001"):
+def fund(contract, direct_vm, sponsor, beneficiary, milestone_id="C-001", approved_host="evidence.example"):
     direct_vm.sender = sponsor
     direct_vm.value = SPONSOR_AMOUNT
-    contract.create_milestone(
+    milestone_ref = contract.create_milestone(
         milestone_id,
         beneficiary,
         "Complete and verify the Counta C-001 text deliverable.",
+        approved_host,
         DELIVER_BY,
         REVIEW_WINDOW,
     )
     direct_vm.value = 0
+    return milestone_ref
 
 
 def activate(contract, direct_vm, beneficiary, milestone_id="C-001"):
@@ -99,7 +105,7 @@ def test_submission_validation_guards_run_after_acceptance(
             "https://deliverable.example/c001.txt", "0x1234",
             "https://evidence.example/c001.txt", digest(EVIDENCE), "summary",
         )
-    assert contract.get_milestone("C-001")["status"] == "active"
+    assert contract.get_milestone(public_ref(direct_alice, "C-001"))["status"] == "active"
 
     with direct_vm.expect_revert():
         contract.submit_delivery(
@@ -107,7 +113,7 @@ def test_submission_validation_guards_run_after_acceptance(
             "https://deliverable.example/c001.txt", digest(TEXT_DELIVERABLE),
             "https://deliverable.example/evidence.txt", digest(EVIDENCE), "summary",
         )
-    assert contract.get_milestone("C-001")["status"] == "active"
+    assert contract.get_milestone(public_ref(direct_alice, "C-001"))["status"] == "active"
 
     with direct_vm.expect_revert():
         contract.submit_delivery(
@@ -115,7 +121,7 @@ def test_submission_validation_guards_run_after_acceptance(
             "https://deliverable.example/c001.mp4", digest(TEXT_DELIVERABLE),
             "https://evidence.example/c001.txt", digest(EVIDENCE), "summary",
         )
-    assert contract.get_milestone("C-001")["status"] == "active"
+    assert contract.get_milestone(public_ref(direct_alice, "C-001"))["status"] == "active"
 
 
 def test_submit_sender_guard_runs_from_active_state(
@@ -132,7 +138,7 @@ def test_submit_sender_guard_runs_from_active_state(
             "https://deliverable.example/c001.txt", digest(TEXT_DELIVERABLE),
             "https://evidence.example/c001.txt", digest(EVIDENCE), "summary",
         )
-    assert contract.get_milestone("C-001")["status"] == "active"
+    assert contract.get_milestone(public_ref(direct_alice, "C-001"))["status"] == "active"
 
 
 def test_url_guards_run_after_acceptance(
@@ -230,7 +236,7 @@ def test_counta_has_no_inconclusive_or_split_dispatch_state(direct_vm, direct_de
         assert forbidden not in source
 
 
-def test_infrastructure_budget_exhaustion_remains_sponsor_safe_after_prior_uncertainty(
+def test_infrastructure_budget_exhaustion_remains_locked_until_deadline_after_prior_uncertainty(
     direct_vm, direct_deploy, direct_alice, direct_bob
 ):
     contract = new_contract(direct_vm, direct_deploy)
@@ -258,12 +264,16 @@ def test_infrastructure_budget_exhaustion_remains_sponsor_safe_after_prior_uncer
         assert int(saved["infrastructure_attempts"]) == expected_infra
 
     saved = contract.get_milestone("C-001")
-    assert saved["status"] == "blocked"
-    assert saved["last_reason"] == "infrastructure_failure_sponsor_refund"
-
-    contract.settle("C-001")
+    assert saved["status"] == "retryable"
+    assert saved["last_reason"] == "infrastructure_budget_exhausted"
+    with direct_vm.expect_revert():
+        contract.settle("C-001")
+    with direct_vm.expect_revert():
+        contract.expire("C-001")
+    direct_vm.warp("2026-10-01T18:00:00Z")
+    contract.expire("C-001")
     saved = contract.get_milestone("C-001")
     assert saved["status"] == "refund_dispatched"
-    assert saved["settlement"] == "sponsor_refund_dispatched"
+    assert saved["settlement"] == "deadline_refund_dispatched"
     assert int(saved["sponsor_dispatched_amount"]) == SPONSOR_AMOUNT
     assert int(saved["beneficiary_dispatched_amount"]) == 0

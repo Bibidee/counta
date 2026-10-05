@@ -1,6 +1,45 @@
-# Counta deployment and evidence
+# Counta deployment and release evidence
 
-## Current release: v0.2.0
+## Current candidate: v0.3.0 — NOT DEPLOYED
+
+The v0.3.0 source is a pre-deployment candidate. It has no contract address,
+deployment transaction, live lifecycle, or source-parity claim. Do not attribute
+the historical address below to v0.3.0. The candidate adds sponsor-bound
+evidence-host admission, sponsor-scoped milestone references, and deadline-only
+refund after infrastructure retry exhaustion.
+
+Frozen candidate source SHA-256: `1c3e41f9354ae8dd682d8d7d9e5f4062ac7db8ce647eaca7c3ea27eb9808379e`
+(36,339 bytes). This identifies the current source candidate only; it is not a
+deployment/source-parity assertion.
+
+The v0.2.0 Studionet deployment and its live transactions remain below as
+historical evidence. That deployment does **not** contain v0.3.0 fixes.
+
+### v0.3.0 release gate
+
+Use Python 3.12 with the checked-in transitive constraints lock:
+
+```powershell
+python -m pip install -r requirements.txt -c requirements-lock.txt
+python -m pytest tests/direct -q
+python scripts/preflight.py
+```
+
+The gate checks exactly one deployable source (`contracts/counta.py`), Python
+syntax/compilation, GenVM lint, generated ABI byte equality, and every Direct
+Mode test with zero skips or failures. GitHub Actions installs with the same
+lock and runs preflight on Ubuntu with the stock Direct Mode loader. Windows
+alone receives the test stdin workaround. The workflow uses verified immutable
+action commit references.
+
+Before any future deployment, require a clean frozen commit and successful
+GitHub Actions on that exact SHA; record the commit's contract SHA-256; tag the
+source; deploy only those exact bytes; retrieve and compare deployed source;
+verify `get_info()`; and record finalized live approval/refund lifecycle plus
+each child transfer receipt and `value_credited`. No v0.3.0 tag or deployment
+was created by this task.
+
+## Historical deployment: v0.2.0 (superseded)
 
 | Evidence | Verified value |
 |---|---|
@@ -26,10 +65,13 @@ minimum 0.001 GEN (`1000000000000000` wei). The unique milestone ID was
 The deliverable fixture was 59 UTF-8 bytes from
 [`https://raw.githubusercontent.com/Bibidee/counta/dea00c4e656f74958ae3596c0de0934bae652b39/evidence/live-deliverable.txt`](https://raw.githubusercontent.com/Bibidee/counta/dea00c4e656f74958ae3596c0de0934bae652b39/evidence/live-deliverable.txt),
 SHA-256 `b2006a039e3ac90264b58902ea6a573fb18f8c4871f0e60af70555287d2eebe9`.
-The independent evidence fixture was 82 UTF-8 bytes from
+The separate repository-owned evidence fixture (not independently authored) was
+82 UTF-8 bytes from
 [`https://cdn.jsdelivr.net/gh/Bibidee/counta@dea00c4e656f74958ae3596c0de0934bae652b39/evidence/live-verification.txt`](https://cdn.jsdelivr.net/gh/Bibidee/counta@dea00c4e656f74958ae3596c0de0934bae652b39/evidence/live-verification.txt),
 SHA-256 `48d94b3537b97d678e5d6c436ce686f7837140acfbc7aeadb74caabbb39739a4`.
-Both URLs returned HTTP 200 and used distinct HTTPS hostnames.
+Both URLs returned HTTP 200 and used distinct HTTPS hostnames. Distinct hostnames
+were only transport separation; both artifacts came from the same repository,
+so this is not proof of independent evidence provenance.
 
 | Step | Transaction | Finalized result |
 |---|---|---|
@@ -95,7 +137,7 @@ Its receipt was `FINALIZED`, result `NO_MAJORITY`, with `value_credited=true` fo
 to 448.9969 GEN. This is specifically a v0.1.0 observation, not evidence that
 all future child transfers succeed.
 
-## v0.2.0 release gate
+## Historical v0.2.0 release gate (not evidence for v0.3.0)
 
 The pinned package set is in `requirements.txt`. On Python 3.12 run:
 
@@ -119,11 +161,13 @@ uncertainty-exhaustion live flow is claimed here. Preserve child-transfer
 receipts separately and do not infer recipient credit from `*_dispatched` state
 alone.
 
-The v0.2.0 policy requires affirmative approval for beneficiary payment. Valid
-semantic uncertainty is retryable twice and becomes `blocked` with
+The historical v0.2.0 policy required affirmative approval for beneficiary payment. Valid
+semantic uncertainty was retryable twice and became `blocked` with
 `semantic_uncertainty_sponsor_refund` on the third finalized uncertain review;
 settlement then refunds the full ledger to the sponsor. Infrastructure failures
-use their separate bounded budget and also end sponsor-safe. No Counta
+used their separate bounded budget and also ended sponsor-safe. In v0.2.0,
+infrastructure-budget exhaustion could make the refund settleable early; v0.3.0
+removes that behavior and requires review-deadline expiry. No Counta
 `inconclusive` or split-payout state exists. GenLayer protocol outcomes such as
 `Undetermined`, `LeaderTimeout`, and `ValidatorsTimeout` are not Counta
 milestone states; they mean a review transaction did not finalize an adjudication.

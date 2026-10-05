@@ -43,6 +43,10 @@
           "string"
         ],
         [
+          "approved_evidence_host",
+          "string"
+        ],
+        [
           "deliver_by",
           "int"
         ],
@@ -53,7 +57,7 @@
       ],
       "kwparams": {},
       "readonly": false,
-      "ret": "null",
+      "ret": "string",
       "payable": true
     },
     "expire": {
