@@ -91,13 +91,19 @@ validator disagreement, or protocol-level `UNDETERMINED` outcomes.
 
 ## Release status
 
-**v0.3.0 is a pre-deployment candidate and is not deployed.** The Studionet
-deployment at
+**Current submission candidate: v0.3.0.** It is deployed to Studionet at
+[`0x4235915E7ec84596239b2d29B93d1a2A982A1018`](https://explorer-studio.genlayer.com/address/0x4235915E7ec84596239b2d29B93d1a2A982A1018).
+The deployment is `FINALIZED / MAJORITY_AGREE / GenVM SUCCESS`; retrieved
+deployed source matches the frozen local contract byte-for-byte. A real live
+milestone completed `funded -> active -> submitted -> approved ->
+payout_dispatched`, and its child transfer receipt reports `value_credited=true`.
+The live artifacts are repository-owned fixtures on two hostnames, not
+independently authored evidence. Full hashes, transaction links, CI, and
+deployment provenance are in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
+The earlier v0.2.0 deployment at
 [`0x8E1C18c660bf14d684ea5C1827D8d99BE27442f7`](https://explorer-studio.genlayer.com/address/0x8E1C18c660bf14d684ea5C1827D8d99BE27442f7)
-is historical v0.2.0 only and does not contain the v0.3.0 changes. Its exact
-source, deployment, and live lifecycle evidence remain in
-[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Do not use it as v0.3.0 parity or
-deployment evidence.
+is historical and superseded; it does not contain v0.3.0 changes.
 
 ## Build and test
 
@@ -116,9 +122,9 @@ stdin workaround is limited to Windows.
 
 ## Release acceptance checklist
 
-Before freezing or deploying v0.3.0: clean tree; all tests/preflight/lint/schema
-pass; GitHub Actions succeeds on the exact release commit; record the source
-SHA-256 and tag the frozen release; deploy only that tagged source; retrieve and
-byte-compare deployed source; verify `get_info()`; run real approval and refund
-lifecycle evidence; and verify each child transfer receipt and `value_credited`.
-This repository currently records no v0.3.0 deployment or live lifecycle.
+For reproducible release checks, use a clean tree; run tests, preflight, lint,
+and schema generation; verify GitHub Actions on the frozen contract commit;
+record its SHA-256; retrieve and byte-compare deployed source; verify
+`get_info()`; and inspect child transfer receipts and `value_credited` rather
+than inferring payment from a dispatch state. The current verified evidence is
+recorded in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).

@@ -1,19 +1,56 @@
 # Counta deployment and release evidence
 
-## Current candidate: v0.3.0 — NOT DEPLOYED
+## Current release: v0.3.0
 
-The v0.3.0 source is a pre-deployment candidate. It has no contract address,
-deployment transaction, live lifecycle, or source-parity claim. Do not attribute
-the historical address below to v0.3.0. The candidate adds sponsor-bound
-evidence-host admission, sponsor-scoped milestone references, and deadline-only
-refund after infrastructure retry exhaustion.
+| Evidence | Verified value |
+|---|---|
+| Network | GenLayer Studionet, chain ID 61999 |
+| Frozen source commit | `5f1a523ada47aefcc7787f028483f880044c7bd1` |
+| Contract SHA-256 | `1c3e41f9354ae8dd682d8d7d9e5f4062ac7db8ce647eaca7c3ea27eb9808379e` |
+| Git blob SHA | `3b1baab680976c4ed380fb0dca46226a61d7ec59` |
+| Source size | 36,339 bytes locally and deployed |
+| Contract address | [`0x4235915E7ec84596239b2d29B93d1a2A982A1018`](https://explorer-studio.genlayer.com/address/0x4235915E7ec84596239b2d29B93d1a2A982A1018) |
+| Deployment transaction | [`0x5ccdb01d7cacf07dfc2ae73b2cbead5e58511c6db338abb486ff4c483c64f5ab`](https://explorer-studio.genlayer.com/tx/0x5ccdb01d7cacf07dfc2ae73b2cbead5e58511c6db338abb486ff4c483c64f5ab) |
+| Deployment result | FINALIZED / MAJORITY_AGREE / GenVM SUCCESS |
+| Source parity | VERIFIED byte-for-byte via `gen_getContractCode`; deployed and local SHA-256 and lengths equal |
+| `get_info()` | Counta 0.3.0; min confidence 75; max text 16,000; max image 2,000,000 bytes; max review/infrastructure attempts 3; retry cooldown 900s; minimum deposit `1000000000000000` wei; sponsor-scoped composite identity; sponsor-fixed exact evidence hostname; infrastructure exhaustion expires only at review deadline |
+| Frozen-commit release gate | 71 tests passed, 0 skipped, 0 failed; preflight, GenVM lint and ABI/schema passed |
+| Frozen-commit GitHub Actions | [run 37342449384](https://github.com/Bibidee/counta/actions/runs/37342449384): completed, success, exact frozen source commit |
 
-Frozen candidate source SHA-256: `1c3e41f9354ae8dd682d8d7d9e5f4062ac7db8ce647eaca7c3ea27eb9808379e`
-(36,339 bytes). This identifies the current source candidate only; it is not a
-deployment/source-parity assertion.
+### v0.3.0 live lifecycle
 
-The v0.2.0 Studionet deployment and its live transactions remain below as
-historical evidence. That deployment does **not** contain v0.3.0 fixes.
+The live fixture ID was `COUNTA-V030-LIVE-20261005-01`. Sponsor/proposer:
+`0x2cd419603eBa593074653930Ddc4073d4FD8fc60`. Beneficiary/consumer:
+`0x7c65ce913f5665c11f1219048112c84cd6cb2a4b`. The sponsor deposited the
+minimum 0.001 GEN (`1000000000000000` wei). The brief was “Complete the
+committed Counta live demo deliverable and provide matching evidence.” The
+approved evidence host was `cdn.jsdelivr.net`.
+
+Deliverable (59 raw UTF-8 bytes):
+[`https://raw.githubusercontent.com/Bibidee/counta/5f1a523ada47aefcc7787f028483f880044c7bd1/evidence/live-deliverable.txt`](https://raw.githubusercontent.com/Bibidee/counta/5f1a523ada47aefcc7787f028483f880044c7bd1/evidence/live-deliverable.txt),
+SHA-256 `b2006a039e3ac90264b58902ea6a573fb18f8c4871f0e60af70555287d2eebe9`.
+
+Evidence (82 raw UTF-8 bytes):
+[`https://cdn.jsdelivr.net/gh/Bibidee/counta@5f1a523ada47aefcc7787f028483f880044c7bd1/evidence/live-verification.txt`](https://cdn.jsdelivr.net/gh/Bibidee/counta@5f1a523ada47aefcc7787f028483f880044c7bd1/evidence/live-verification.txt),
+SHA-256 `48d94b3537b97d678e5d6c436ce686f7837140acfbc7aeadb74caabbb39739a4`.
+Both were fetched as exact raw bytes and matched their commitments. They are
+two URLs/hostnames but both fixtures are maintained in the same repository;
+they are not independent authorship or provenance.
+
+| Step | Transaction | Finalized result |
+|---|---|---|
+| `create_milestone` | [`0x0ce68af13b6fbc2af82c96a394344b0083238ad34e93be705ac14cf73438deb7`](https://explorer-studio.genlayer.com/tx/0x0ce68af13b6fbc2af82c96a394344b0083238ad34e93be705ac14cf73438deb7) | FINALIZED / MAJORITY_AGREE / GenVM SUCCESS; state `funded`; value credited 0.001 GEN |
+| `accept_milestone` | [`0x1da784e87a05de370f6bdbb2973fc611bca46dbd8569c2dbb11f74e0e0e1e473`](https://explorer-studio.genlayer.com/tx/0x1da784e87a05de370f6bdbb2973fc611bca46dbd8569c2dbb11f74e0e0e1e473) | FINALIZED / MAJORITY_AGREE / GenVM SUCCESS; state `active` |
+| `submit_delivery` | [`0x2126024b81059f8b2b3a4944d178678ee3f66f5c0ea6f11e3134506453b09f2e`](https://explorer-studio.genlayer.com/tx/0x2126024b81059f8b2b3a4944d178678ee3f66f5c0ea6f11e3134506453b09f2e) | FINALIZED / MAJORITY_AGREE / GenVM SUCCESS; state `submitted`; committed URLs and hashes match |
+| `review` | [`0x711c4da553cb11e78e41a6af951231cf25a58b8202fc37960d6c2bad40404730`](https://explorer-studio.genlayer.com/tx/0x711c4da553cb11e78e41a6af951231cf25a58b8202fc37960d6c2bad40404730) | FINALIZED / MAJORITY_AGREE / GenVM SUCCESS; state `approved`, confidence 90 |
+| `settle` | [`0xb9046fe756f09d16d87fe4c740cb9dcc6f2aa9db2e9b7f887eb7fd4a24ca334e`](https://explorer-studio.genlayer.com/tx/0xb9046fe756f09d16d87fe4c740cb9dcc6f2aa9db2e9b7f887eb7fd4a24ca334e) | FINALIZED / MAJORITY_AGREE / GenVM SUCCESS; state `payout_dispatched`; ledger `deposited=0`; beneficiary amount 0.001 GEN |
+| Child transfer | [`0x39882a964a1da3257544af0553e82de635a0dfd4363114ec535937fada0cc1bf`](https://explorer-studio.genlayer.com/tx/0x39882a964a1da3257544af0553e82de635a0dfd4363114ec535937fada0cc1bf) | FINALIZED; beneficiary received 0.001 GEN; `value_credited=true` |
+
+The final canonical milestone read was `status=payout_dispatched`,
+`settlement=beneficiary_payout_dispatched`, `deposited=0`,
+`beneficiary_dispatched_amount=1000000000000000`, and sponsor amount 0. The
+child receipt independently confirms the beneficiary credit. This is a
+successful approval-and-payout proof, not a refund/timeout proof.
 
 ### v0.3.0 release gate
 
@@ -32,12 +69,11 @@ lock and runs preflight on Ubuntu with the stock Direct Mode loader. Windows
 alone receives the test stdin workaround. The workflow uses verified immutable
 action commit references.
 
-Before any future deployment, require a clean frozen commit and successful
-GitHub Actions on that exact SHA; record the commit's contract SHA-256; tag the
-source; deploy only those exact bytes; retrieve and compare deployed source;
-verify `get_info()`; and record finalized live approval/refund lifecycle plus
-each child transfer receipt and `value_credited`. No v0.3.0 tag or deployment
-was created by this task.
+The v0.3.0 contract source is frozen at the commit/hash above and remained
+unchanged through deployment and this documentation update. The later
+documentation-only commit does not change the deployed contract or its source
+parity. Re-run the release gate on the current documentation HEAD as part of
+this closeout.
 
 ## Historical deployment: v0.2.0 (superseded)
 
