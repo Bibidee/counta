@@ -81,12 +81,28 @@ byte equality with committed `artifacts/counta.abi.json`, then runs the genuine
 Direct Mode tests. Any mismatch or failed check blocks release. CI invokes the
 same preflight script.
 
+v0.2.0 has not been deployed or published as a release, so its version remains
+`0.2.0` while these pre-deployment changes are finalized. The old v0.1.0 address
+does not include them.
+
 After freezing v0.2.0 source, record its commit and raw SHA-256, deploy only
 `contracts/counta.py` to Studionet, wait for finalization, check `get_info()`
 reports `0.2.0`, retrieve the deployed raw source with `gen_getContractCode`
 or equivalent and compare bytes. Then run a fresh lifecycle exercising
-create → accept → submit → review → dispatch, plus failure/refund and eligible
-semantic uncertainty behavior. Preserve child-transfer receipts separately.
+create → accept → submit → review → dispatch, plus failure/refund and semantic-
+uncertainty retry/exhaustion behavior. Preserve child-transfer receipts separately.
 Update the v0.2.0 table above only with observed results. Do not infer successful
 recipient credit from Counta's `*_dispatched` state alone: verify each emitted
 child transfer receipt/result and `value_credited` when available.
+
+The v0.2.0 policy requires affirmative approval for beneficiary payment. Valid
+semantic uncertainty is retryable twice and becomes `blocked` with
+`semantic_uncertainty_sponsor_refund` on the third finalized uncertain review;
+settlement then refunds the full ledger to the sponsor. Infrastructure failures
+use their separate bounded budget and also end sponsor-safe. No Counta
+`inconclusive` or split-payout state exists. GenLayer protocol outcomes such as
+`Undetermined`, `LeaderTimeout`, and `ValidatorsTimeout` are not Counta
+milestone states; they mean a review transaction did not finalize an adjudication.
+Read canonical milestone state before taking action. If no adjudication
+finalizes before the review deadline, permissionless `expire` performs the
+deterministic sponsor refund without web or LLM access.

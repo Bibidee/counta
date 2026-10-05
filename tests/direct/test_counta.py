@@ -187,6 +187,7 @@ def test_happy_review_then_permissionless_one_time_settlement(direct_vm, direct_
     assert int(saved["dispatched_amount"]) == SPONSOR_AMOUNT
     assert int(saved["beneficiary_dispatched_amount"]) == SPONSOR_AMOUNT
     assert int(saved["sponsor_dispatched_amount"]) == 0
+    assert int(saved["dispatched_amount"]) <= SPONSOR_AMOUNT
     with direct_vm.expect_revert():
         contract.settle("C-001")
 
@@ -208,6 +209,60 @@ def test_semantic_rejection_refunds_sponsor(direct_vm, direct_deploy, direct_ali
     assert saved["settlement"] == "sponsor_refund_dispatched"
     assert int(saved["sponsor_dispatched_amount"]) == SPONSOR_AMOUNT
     assert int(saved["beneficiary_dispatched_amount"]) == 0
+    assert int(saved["dispatched_amount"]) <= SPONSOR_AMOUNT
+
+
+def test_blocked_diagnostic_variance_is_equivalent(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = new_contract(direct_vm, direct_deploy)
+    fund(contract, direct_vm, direct_alice, direct_bob)
+    submit_text(contract, direct_vm, direct_bob)
+    direct_vm.sender = direct_alice
+    configure_review(direct_vm, analysis={
+        "deliverable_match": "no", "evidence_support": "yes", "risk": "no",
+        "confidence": 88, "rationale": "Leader identifies a deliverable mismatch.",
+    })
+    contract.review("C-001")
+    assert contract.get_milestone("C-001")["status"] == "blocked"
+
+    direct_vm.clear_mocks()
+    configure_review(direct_vm, analysis={
+        "deliverable_match": "yes", "evidence_support": "no", "risk": "yes",
+        "confidence": 42, "rationale": "Validator finds unsupported evidence and risk.",
+    })
+    assert direct_vm.run_validator() is True
+    assert contract.get_milestone("C-001")["status"] == "blocked"
+
+
+def test_metadata_does_not_gate_safe_tuple_but_missing_confidence_cannot_approve(
+    direct_vm, direct_deploy, direct_alice, direct_bob
+):
+    contract = new_contract(direct_vm, direct_deploy)
+    fund(contract, direct_vm, direct_alice, direct_bob)
+    submit_text(contract, direct_vm, direct_bob)
+    direct_vm.sender = direct_alice
+    configure_review(direct_vm, analysis={
+        "deliverable_match": "yes", "evidence_support": "yes", "risk": "no",
+        "confidence": 90, "rationale": "", "non_authoritative_extra": "ignored",
+    })
+    contract.review("C-001")
+    saved = contract.get_milestone("C-001")
+    assert saved["status"] == "approved"
+    assert saved["rationale"] == ""
+
+
+def test_missing_confidence_cannot_approve(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = new_contract(direct_vm, direct_deploy)
+    fund(contract, direct_vm, direct_alice, direct_bob)
+    submit_text(contract, direct_vm, direct_bob)
+    direct_vm.sender = direct_alice
+    configure_review(direct_vm, analysis={
+        "deliverable_match": "yes", "evidence_support": "yes", "risk": "no",
+        "rationale": "A missing confidence must never approve.",
+    })
+    contract.review("C-001")
+    saved = contract.get_milestone("C-001")
+    assert saved["status"] == "retryable"
+    assert int(saved["confidence"]) == 0
 
 
 @pytest.mark.parametrize("confidence,expected", [(74, "retryable"), (75, "approved")])
@@ -223,7 +278,7 @@ def test_confidence_boundary_is_deterministic(direct_vm, direct_deploy, direct_a
     assert contract.get_milestone("C-001")["status"] == expected
 
 
-def test_valid_semantic_uncertainty_retries_then_can_split(direct_vm, direct_deploy, direct_alice, direct_bob):
+def test_three_semantic_uncertainties_block_and_refund_sponsor(direct_vm, direct_deploy, direct_alice, direct_bob):
     contract = new_contract(direct_vm, direct_deploy)
     fund(contract, direct_vm, direct_alice, direct_bob)
     submit_text(contract, direct_vm, direct_bob)
@@ -234,18 +289,28 @@ def test_valid_semantic_uncertainty_retries_then_can_split(direct_vm, direct_dep
     direct_vm.sender = direct_alice
     contract.review("C-001")
     assert contract.get_milestone("C-001")["status"] == "retryable"
+    with direct_vm.expect_revert():
+        contract.settle("C-001")
+    assert int(contract.get_milestone("C-001")["deposited"]) == SPONSOR_AMOUNT
     direct_vm.warp("2026-10-01T12:15:00Z")
     contract.review("C-001")
     assert contract.get_milestone("C-001")["status"] == "retryable"
+    with direct_vm.expect_revert():
+        contract.settle("C-001")
+    assert int(contract.get_milestone("C-001")["deposited"]) == SPONSOR_AMOUNT
     direct_vm.warp("2026-10-01T12:30:00Z")
     contract.review("C-001")
     saved = contract.get_milestone("C-001")
-    assert saved["status"] == "inconclusive"
+    assert saved["status"] == "blocked"
+    assert saved["last_reason"] == "semantic_uncertainty_sponsor_refund"
     contract.settle("C-001")
     saved = contract.get_milestone("C-001")
-    assert saved["status"] == "split_dispatched"
-    assert saved["settlement"] == "uncertainty_split_dispatched"
-    assert int(saved["sponsor_dispatched_amount"]) + int(saved["beneficiary_dispatched_amount"]) == SPONSOR_AMOUNT
+    assert saved["status"] == "refund_dispatched"
+    assert saved["settlement"] == "sponsor_refund_dispatched"
+    assert int(saved["sponsor_dispatched_amount"]) == SPONSOR_AMOUNT
+    assert int(saved["beneficiary_dispatched_amount"]) == 0
+    assert int(saved["dispatched_amount"]) == SPONSOR_AMOUNT
+    assert int(saved["dispatched_amount"]) <= SPONSOR_AMOUNT
 
 
 def test_fetch_unavailable_is_retryable_and_never_approves(direct_vm, direct_deploy, direct_alice, direct_bob):
@@ -509,11 +574,14 @@ def test_invariant_info_and_read_unknown(direct_vm, direct_deploy):
         contract.get_milestone("missing")
 
 
-def _capture_approval_for_validator_test(direct_vm, direct_deploy, direct_alice, direct_bob):
+def _capture_approval_for_validator_test(direct_vm, direct_deploy, direct_alice, direct_bob, confidence=90):
     contract = new_contract(direct_vm, direct_deploy)
     fund(contract, direct_vm, direct_alice, direct_bob)
     submit_text(contract, direct_vm, direct_bob)
-    configure_review(direct_vm)
+    configure_review(direct_vm, analysis={
+        "deliverable_match": "yes", "evidence_support": "yes", "risk": "no",
+        "confidence": confidence, "rationale": "Leader independently approves the exact safe tuple.",
+    })
     contract.review("C-001")
     return contract
 
@@ -529,6 +597,27 @@ def test_validator_block_disagreement_is_rejected(direct_vm, direct_deploy, dire
     assert contract.get_milestone("C-001")["status"] == "approved"
 
 
+def test_validator_approval_cannot_accept_leader_block(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = new_contract(direct_vm, direct_deploy)
+    fund(contract, direct_vm, direct_alice, direct_bob)
+    submit_text(contract, direct_vm, direct_bob)
+    direct_vm.sender = direct_alice
+    configure_review(direct_vm, analysis={
+        "deliverable_match": "no", "evidence_support": "yes", "risk": "yes",
+        "confidence": 95, "rationale": "Leader finds a substantive mismatch.",
+    })
+    contract.review("C-001")
+    assert contract.get_milestone("C-001")["status"] == "blocked"
+
+    direct_vm.clear_mocks()
+    configure_review(direct_vm, analysis={
+        "deliverable_match": "yes", "evidence_support": "yes", "risk": "no",
+        "confidence": 95, "rationale": "Validator independently approves.",
+    })
+    assert direct_vm.run_validator() is False
+    assert contract.get_milestone("C-001")["status"] == "blocked"
+
+
 def test_rationale_variance_and_close_confidence_are_equivalent(direct_vm, direct_deploy, direct_alice, direct_bob):
     contract = _capture_approval_for_validator_test(direct_vm, direct_deploy, direct_alice, direct_bob)
     direct_vm.clear_mocks()
@@ -540,12 +629,86 @@ def test_rationale_variance_and_close_confidence_are_equivalent(direct_vm, direc
     assert contract.get_milestone("C-001")["status"] == "approved"
 
 
-def test_confidence_disagreement_over_bound_is_not_equivalent(direct_vm, direct_deploy, direct_alice, direct_bob):
+def test_approved_confidence_80_vs_97_is_equivalent(direct_vm, direct_deploy, direct_alice, direct_bob):
+    contract = _capture_approval_for_validator_test(
+        direct_vm, direct_deploy, direct_alice, direct_bob, confidence=80
+    )
+    direct_vm.clear_mocks()
+    configure_review(direct_vm, analysis={
+        "deliverable_match": "yes", "evidence_support": "yes", "risk": "no",
+        "confidence": 97, "rationale": "Different explanation; same independently safe decision.",
+    })
+    assert direct_vm.run_validator() is True
+    assert contract.get_milestone("C-001")["status"] == "approved"
+
+
+def test_approved_90_vs_retryable_74_is_not_equivalent(direct_vm, direct_deploy, direct_alice, direct_bob):
     contract = _capture_approval_for_validator_test(direct_vm, direct_deploy, direct_alice, direct_bob)
     direct_vm.clear_mocks()
     configure_review(direct_vm, analysis={
         "deliverable_match": "yes", "evidence_support": "yes", "risk": "no",
-        "confidence": 65, "rationale": "Confidence is materially different.",
+        "confidence": 74, "rationale": "Below the approval threshold, so this is retryable.",
     })
     assert direct_vm.run_validator() is False
     assert contract.get_milestone("C-001")["status"] == "approved"
+
+
+def test_uncertainty_with_different_diagnostic_fields_and_rationale_is_equivalent(
+    direct_vm, direct_deploy, direct_alice, direct_bob
+):
+    contract = new_contract(direct_vm, direct_deploy)
+    fund(contract, direct_vm, direct_alice, direct_bob)
+    submit_text(contract, direct_vm, direct_bob)
+    direct_vm.sender = direct_alice
+    configure_review(direct_vm, analysis={
+        "deliverable_match": "unclear", "evidence_support": "yes", "risk": "unclear",
+        "confidence": 60, "rationale": "Leader is uncertain about the committed work.",
+    })
+    contract.review("C-001")
+    assert contract.get_milestone("C-001")["status"] == "retryable"
+
+    direct_vm.clear_mocks()
+    configure_review(direct_vm, analysis={
+        "deliverable_match": "yes", "evidence_support": "unclear", "risk": "no",
+        "confidence": 31, "rationale": "The evidence connection remains uncertain for a different reason.",
+    })
+    assert direct_vm.run_validator() is True
+    assert contract.get_milestone("C-001")["status"] == "retryable"
+
+
+def test_infrastructure_error_subtypes_equivalent_but_never_approval(
+    direct_vm, direct_deploy, direct_alice, direct_bob
+):
+    contract = new_contract(direct_vm, direct_deploy)
+    fund(contract, direct_vm, direct_alice, direct_bob)
+    submit_text(contract, direct_vm, direct_bob)
+    direct_vm.sender = direct_alice
+    direct_vm.mock_web("https://deliverable.example/c001.txt", {"status": 503, "body": b""})
+    direct_vm.mock_web("https://evidence.example/c001.txt", {"status": 200, "body": EVIDENCE})
+    contract.review("C-001")
+    assert contract.get_milestone("C-001")["status"] == "retryable"
+
+    direct_vm.clear_mocks()
+    configure_review(direct_vm, analysis={
+        "deliverable_match": "yes", "evidence_support": "yes", "risk": "no",
+        "confidence": 95, "rationale": "A successful approval cannot match an infrastructure error.",
+    })
+    assert direct_vm.run_validator() is False
+
+
+def test_distinct_infrastructure_error_classes_are_equivalent(
+    direct_vm, direct_deploy, direct_alice, direct_bob
+):
+    contract = new_contract(direct_vm, direct_deploy)
+    fund(contract, direct_vm, direct_alice, direct_bob)
+    submit_text(contract, direct_vm, direct_bob)
+    direct_vm.sender = direct_alice
+    direct_vm.mock_web("https://deliverable.example/c001.txt", {"status": 503, "body": b""})
+    direct_vm.mock_web("https://evidence.example/c001.txt", {"status": 200, "body": EVIDENCE})
+    contract.review("C-001")
+
+    direct_vm.clear_mocks()
+    direct_vm.mock_web("https://deliverable.example/c001.txt", {"status": 200, "body": TEXT_DELIVERABLE})
+    direct_vm.mock_web("https://evidence.example/c001.txt", {"status": 200, "body": EVIDENCE})
+    direct_vm.mock_llm(r"You are independently assessing a milestone escrow", "not-json")
+    assert direct_vm.run_validator() is True

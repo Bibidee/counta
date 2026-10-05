@@ -1,5 +1,6 @@
 import hashlib
 import json
+from pathlib import Path
 
 
 CONTRACT = "contracts/counta.py"
@@ -162,7 +163,7 @@ def test_url_guards_run_after_acceptance(
         assert contract.get_milestone("C-001")["status"] == "active"
 
 
-def test_mixed_failure_budgets_are_independent_and_three_valid_uncertainties_split(
+def test_mixed_failure_budgets_are_independent_and_uncertainty_exhaustion_refunds(
     direct_vm, direct_deploy, direct_alice, direct_bob
 ):
     contract = new_contract(direct_vm, direct_deploy)
@@ -202,15 +203,31 @@ def test_mixed_failure_budgets_are_independent_and_three_valid_uncertainties_spl
     mock_uncertain(direct_vm)
     contract.review("C-001")
     saved = contract.get_milestone("C-001")
-    assert saved["status"] == "inconclusive"
+    assert saved["status"] == "blocked"
+    assert saved["last_reason"] == "semantic_uncertainty_sponsor_refund"
     assert int(saved["semantic_attempts"]) == 3
     assert int(saved["infrastructure_attempts"]) == 2
 
     contract.settle("C-001")
     saved = contract.get_milestone("C-001")
-    assert saved["status"] == "split_dispatched"
-    assert saved["settlement"] == "uncertainty_split_dispatched"
-    assert int(saved["sponsor_dispatched_amount"]) + int(saved["beneficiary_dispatched_amount"]) == SPONSOR_AMOUNT
+    assert saved["status"] == "refund_dispatched"
+    assert saved["settlement"] == "sponsor_refund_dispatched"
+    assert int(saved["sponsor_dispatched_amount"]) == SPONSOR_AMOUNT
+    assert int(saved["beneficiary_dispatched_amount"]) == 0
+    assert int(saved["dispatched_amount"]) == SPONSOR_AMOUNT
+    assert int(saved["deposited"]) == 0
+
+
+def test_counta_has_no_inconclusive_or_split_dispatch_state(direct_vm, direct_deploy):
+    contract = new_contract(direct_vm, direct_deploy)
+    info = contract.get_info()
+    assert "semantic_uncertainty_split_bps" not in info
+    source = Path(CONTRACT).read_text(encoding="utf-8")
+    for forbidden in (
+        "INCONCLUSIVE =", "SPLIT_DISPATCHED =", "RESULT_INCONCLUSIVE =",
+        "semantic_uncertainty_split_bps", "uncertainty_split_dispatched",
+    ):
+        assert forbidden not in source
 
 
 def test_infrastructure_budget_exhaustion_remains_sponsor_safe_after_prior_uncertainty(

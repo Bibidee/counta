@@ -6,9 +6,9 @@ Counta fixes the parties, brief, amount and delivery deadline when a sponsor
 funds a milestone. The designated beneficiary can submit one committed text or
 image deliverable plus textual evidence. Validators independently fetch and
 hash the exact bytes, then assess the committed material against the brief.
-Only a finalized APPROVED result can dispatch payment to the beneficiary. A
-valid but persistently uncertain semantic review may split; infrastructure or
-integrity failures never mature into beneficiary-paying uncertainty settlement.
+Only a finalized APPROVED result can dispatch payment to the beneficiary.
+Semantic uncertainty, infrastructure failure and integrity failure never
+authorize beneficiary payment.
 """
 
 import hashlib
@@ -28,14 +28,11 @@ SUBMITTED = "submitted"
 RETRYABLE = "retryable"
 APPROVED = "approved"
 BLOCKED = "blocked"
-INCONCLUSIVE = "inconclusive"
 PAYOUT_DISPATCHED = "payout_dispatched"
 REFUND_DISPATCHED = "refund_dispatched"
-SPLIT_DISPATCHED = "split_dispatched"
 
 RESULT_APPROVED = "beneficiary_payout_dispatched"
 RESULT_BLOCKED = "sponsor_refund_dispatched"
-RESULT_INCONCLUSIVE = "uncertainty_split_dispatched"
 RESULT_CANCELLED = "pre_acceptance_cancel_refund_dispatched"
 RESULT_EXPIRED = "deadline_refund_dispatched"
 
@@ -52,12 +49,10 @@ MAX_DELIVERY_WINDOW = 180 * 24 * 60 * 60
 MIN_REVIEW_WINDOW = 60 * 60
 MAX_REVIEW_WINDOW = 30 * 24 * 60 * 60
 MIN_CONFIDENCE = 75
-MAX_CONFIDENCE_DELTA = 20
 MAX_REVIEW_ATTEMPTS = 3
 MAX_INFRASTRUCTURE_ATTEMPTS = 3
 REVIEW_RETRY_COOLDOWN = 15 * 60
 EXPECTED = "[EXPECTED]"
-FIELDS = ("deliverable_match", "evidence_support", "risk", "confidence", "rationale")
 ENUM_FIELDS = ("deliverable_match", "evidence_support", "risk")
 
 
@@ -232,28 +227,31 @@ def _canonical_output(raw):
         raw = raw["result"]
     if not isinstance(raw, dict):
         raise ValueError("malformed_not_object")
-    if set(raw) != set(FIELDS):
-        raise ValueError("malformed_field_set")
-    normalized = dict(raw)
+    if any(key not in raw for key in ENUM_FIELDS):
+        raise ValueError("malformed_decision_fields")
+    # Only these three enums can define the semantic outcome. Confidence and
+    # rationale are bounded explanatory metadata, never independent approval
+    # requirements. Bad/missing confidence safely becomes 0, so it cannot
+    # authorize payout; bad/missing rationale becomes an empty string.
+    normalized = {}
     for key in ENUM_FIELDS:
-        value = normalized.get(key)
+        value = raw.get(key)
         if not isinstance(value, str):
             raise ValueError("malformed_enum_type")
         normalized[key] = value.strip().lower()
         if normalized[key] not in ("yes", "no", "unclear"):
             raise ValueError("malformed_enum_value")
-    confidence = normalized.get("confidence")
+    confidence = raw.get("confidence", 0)
     if isinstance(confidence, str) and re.fullmatch(r"(?:0|[1-9][0-9]{0,2})", confidence.strip()):
         confidence = int(confidence.strip())
     if not isinstance(confidence, int) or isinstance(confidence, bool) or not 0 <= confidence <= 100:
-        raise ValueError("malformed_confidence")
+        confidence = 0
     normalized["confidence"] = confidence
-    rationale = normalized.get("rationale")
-    if not isinstance(rationale, str):
-        raise ValueError("malformed_rationale_type")
-    rationale = _clean(rationale)
-    if not rationale or len(rationale) > MAX_RATIONALE:
-        raise ValueError("malformed_rationale_length")
+    rationale = raw.get("rationale", "")
+    if isinstance(rationale, str):
+        rationale = _clean(rationale[:MAX_RATIONALE])[:MAX_RATIONALE]
+    else:
+        rationale = ""
     normalized["rationale"] = rationale
     return normalized
 
@@ -279,26 +277,30 @@ def _valid_analysis(value) -> bool:
 
 
 def _equivalent(left, right) -> bool:
+    """Accept independent observations only when they imply the same action.
+
+    Diagnostic classes, confidence values and rationale may vary within a
+    canonical outcome. Approval remains strict because _decision independently
+    applies the exact safe tuple and minimum confidence to each analysis.
+    """
     if not isinstance(left, dict) or not isinstance(right, dict):
         return False
     if left.get("kind") != right.get("kind"):
         return False
     if left.get("kind") == "integrity_failure":
-        return left.get("class") == right.get("class")
+        # Every integrity failure deterministically blocks and refunds.
+        return True
     if left.get("kind") == "error":
-        # Agreement on a bounded error code can only produce BLOCKED or
-        # RETRYABLE, never approval.
-        return left.get("class") == right.get("class")
+        # Error subclasses share the infrastructure budget and cannot approve.
+        return True
     if left.get("kind") != "analysis":
         return False
     a, b = left.get("analysis"), right.get("analysis")
     if not _valid_analysis(a) or not _valid_analysis(b):
         return False
-    if _decision(a) != _decision(b):
-        return False
-    if any(a[key] != b[key] for key in ENUM_FIELDS):
-        return False
-    return abs(a["confidence"] - b["confidence"]) <= MAX_CONFIDENCE_DELTA
+    # Compare deterministic economic outcomes, not diagnostic fields or prose.
+    # Each APPROVED observation independently must satisfy _decision().
+    return _decision(a) == _decision(b)
 
 
 def _prompt(brief: str, summary: str, evidence: str, artifact_kind: str) -> str:
@@ -325,9 +327,10 @@ def _prompt(brief: str, summary: str, evidence: str, artifact_kind: str) -> str:
         "no if contradictory or unrelated, otherwise unclear. risk is yes if there "
         "is material ambiguity, contradiction, missing required condition, or "
         "suspicious inconsistency; no only when none is apparent; otherwise unclear. "
-        "confidence is an integer 0..100 in your assessment. rationale is a short "
-        "explanation, at most 400 characters. The contract approves only the exact "
-        "tuple yes/yes/no with confidence at least 75. If uncertain, do not guess; "
+        "confidence is an integer 0..100 and gates approval at 75. Rationale is "
+        "optional, informational text capped at 400 characters; it never controls "
+        "authorization. Missing or invalid confidence is treated as 0. The contract "
+        "approves only the exact tuple yes/yes/no with confidence at least 75. If uncertain, do not guess; "
         "use unclear. Do not use markdown or extra fields.\nBEGIN_UNTRUSTED_DATA\n"
         + data + "\nEND_UNTRUSTED_DATA"
     )
@@ -560,10 +563,13 @@ class Counta(gl.Contract):
             else:
                 semantic_attempts += 1
                 milestone.semantic_attempts = u256(semantic_attempts)
-                milestone.status = RETRYABLE if semantic_attempts < MAX_REVIEW_ATTEMPTS else INCONCLUSIVE
-                milestone.last_reason = "uncertain_or_low_confidence"
-                if milestone.status == RETRYABLE:
+                if semantic_attempts < MAX_REVIEW_ATTEMPTS:
+                    milestone.status = RETRYABLE
+                    milestone.last_reason = "uncertain_or_low_confidence"
                     milestone.next_review_at = u256(now + REVIEW_RETRY_COOLDOWN)
+                else:
+                    milestone.status = BLOCKED
+                    milestone.last_reason = "semantic_uncertainty_sponsor_refund"
             return
         if result.get("kind") == "integrity_failure":
             milestone.status = BLOCKED
@@ -577,7 +583,7 @@ class Counta(gl.Contract):
         milestone.infrastructure_attempts = u256(attempts)
         milestone.last_reason = reason[:64]
         # Persistent fetch/provider/malformed-output failures are sponsor-safe:
-        # they cannot create semantic uncertainty or a beneficiary split.
+        # they cannot create semantic authorization for beneficiary payment.
         if attempts >= MAX_INFRASTRUCTURE_ATTEMPTS:
             milestone.status = BLOCKED
             milestone.last_reason = "infrastructure_failure_sponsor_refund"
@@ -596,10 +602,6 @@ class Counta(gl.Contract):
             beneficiary_amount = u256(0)
             sponsor_amount = milestone.deposited
             recipient_mode = RESULT_BLOCKED
-        elif milestone.status == INCONCLUSIVE:
-            sponsor_amount = u256(int(milestone.deposited) // 2)
-            beneficiary_amount = u256(int(milestone.deposited) - int(sponsor_amount))
-            recipient_mode = RESULT_INCONCLUSIVE
         else:
             raise gl.vm.UserError(f"{EXPECTED} Milestone is not settleable")
 
@@ -613,9 +615,7 @@ class Counta(gl.Contract):
         milestone.sponsor_dispatched_amount = sponsor_amount
         milestone.beneficiary_dispatched_amount = beneficiary_amount
         milestone.settlement = recipient_mode
-        if int(sponsor_amount) and int(beneficiary_amount):
-            milestone.status = SPLIT_DISPATCHED
-        elif int(beneficiary_amount):
+        if int(beneficiary_amount):
             milestone.status = PAYOUT_DISPATCHED
         else:
             milestone.status = REFUND_DISPATCHED
@@ -699,7 +699,6 @@ class Counta(gl.Contract):
             "name": "Counta",
             "version": "0.2.0",
             "min_confidence": str(MIN_CONFIDENCE),
-            "max_confidence_delta": str(MAX_CONFIDENCE_DELTA),
             "max_text_artifact_bytes": str(MAX_TEXT_BYTES),
             "max_image_artifact_bytes": str(MAX_IMAGE_BYTES),
             "max_review_attempts": str(MAX_REVIEW_ATTEMPTS),
@@ -708,5 +707,4 @@ class Counta(gl.Contract):
             "min_deposit": str(MIN_DEPOSIT),
             "milestone_capacity": "unbounded_by_contract",
             "milestone_count": str(self.milestone_count),
-            "semantic_uncertainty_split_bps": "5000",
         }

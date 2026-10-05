@@ -32,13 +32,13 @@ consensus outcomes.
    committing distinct-host HTTPS URLs and SHA-256 hashes.
 4. **Review:** only sponsor or beneficiary may trigger review. Retries have a
    15-minute cooldown and separate bounded semantic/infrastructure counters.
-5. **Dispatch:** approved sends the full ledger to the beneficiary; substantive
-   rejection or exhausted infrastructure failures refund the sponsor; only
-   three valid, hash-verified semantic uncertainty results may reach the 50/50
-   uncertainty split. All state debits happen before external transfer messages.
+5. **Dispatch:** only affirmative approval sends the full ledger to the
+   beneficiary. Rejection, exhausted infrastructure failures, and exhausted
+   semantic uncertainty refund the full ledger to the sponsor. All state debits
+   happen before external transfer messages.
 6. **Recover:** unaccepted/unsubmitted delivery expiry refunds the sponsor.
-   Review-window expiry also refunds the sponsor unless valid semantic
-   uncertainty already reached `INCONCLUSIVE`.
+   Review-window expiry also refunds the sponsor if no accepted approval or
+   rejection was reached.
 
 ## Security and accounting
 
@@ -46,15 +46,21 @@ consensus outcomes.
   Hash mismatch, bad HTTP status, empty/oversized content, invalid UTF-8 and
   unsupported images fail closed and cannot approve.
 - Approval requires `deliverable_match=yes`, `evidence_support=yes`, `risk=no`,
-  confidence at least 75, and validator agreement on the bounded semantic tuple
-  with confidence values no more than 20 points apart. Rationale wording is not
-  consensus-critical.
+  and confidence at least 75 in each validator's own analysis. Validators agree
+  on the deterministic Counta outcome (`approved`, `blocked`, or `retryable`),
+  not matching rationale, confidence numbers, or diagnostic enum details.
+  The stored leader confidence is descriptive, while each validator's confidence
+  is used only for that validator's own 75-point approval gate. Rationale is
+  informational and never controls authorization. Missing/invalid confidence is
+  normalized to zero; malformed decision enums or unparseable output fail closed.
 - Artifact and evidence contents are untrusted prompt data. Images are raw PNG
   or JPEG only; text and evidence must be UTF-8.
 - Infrastructure failures and malformed model output consume only the separate
   infrastructure budget. After three finalized such failures, the milestone is
-  sponsor-refund eligible; these failures never cause beneficiary payment or a
-  split. A retry cooldown applies. Only valid semantic uncertainty can split.
+  blocked and sponsor-refund eligible. Valid semantic uncertainty has its own
+  three-attempt budget: the first two results remain retryable after cooldown;
+  the third blocks and makes the full escrow sponsor-refund eligible. Neither
+  uncertainty nor infrastructure failure can cause beneficiary payment.
 - The beneficiary must accept before sponsor cancellation is locked. `deliver_by`
   is measured from creation; submission is valid only while `now < deliver_by`,
   while expiry is valid at `now >= deliver_by`. Review follows the same strict
@@ -69,6 +75,32 @@ consensus outcomes.
 - HTTPS syntax checks cannot guarantee public DNS resolution or safe redirect
   behavior at every validator. SHA-256 proves byte identity, not provenance or
   truth. Model confidence is not a calibrated probability.
+
+## Integrator safeguards for platform boundaries
+
+These are operational requirements, not guarantees the contract can create:
+
+- **Artifact destinations:** integrators should admit only expected public HTTPS
+  hosts and immutable, commit-pinned paths before calling Counta. Avoid redirect
+  URLs and user-controlled shorteners. Counta validates URL syntax and rejects
+  private IP literals, but GenLayer's current web response does not expose a
+  redirect chain/final URL or a redirect-disable option to the contract; DNS
+  resolution and redirect destinations therefore remain platform/network trust
+  boundaries. Exact-byte hashes still make changed content fail closed.
+- **Consensus:** wait for the canonical transaction status. `UNDETERMINED` is
+  not an application verdict and does not authorize settlement; inspect the
+  milestone state before retrying, and respect the contract's retry cooldown and
+  attempt budgets. Never reinterpret a missing/undetermined result as approval.
+- **Transfers:** treat a terminal `*_dispatched` state as an emitted payout or
+  refund instruction, not proof of recipient credit. Follow the parent
+  transaction's child transfer to its final result and verify `value_credited`
+  where exposed. Do not submit a second settlement or infer a refund after an
+  ambiguous/pending child result; resolve it from the canonical receipt first.
+- **Storage:** plan for permanent on-chain history and its cost. Keep an
+  off-chain indexed archive for search/analytics, but treat chain state and
+  finalized receipts as authoritative. For independent workloads, consider
+  separate Counta deployments/cohorts so one deployment's history and growth
+  are operationally bounded; this does not erase historical chain data.
 
 ## Release status
 
