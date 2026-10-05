@@ -1,21 +1,51 @@
 # Counta deployment and evidence
 
-## Current release candidate: v0.2.0 — not deployed
+## Current release: v0.2.0
 
-The hardened local source changes escrow lifecycle and storage-visible state,
-so the previous Studionet deployment is not a deployment of this source. No
-v0.2.0 address, deployment transaction, or source-parity claim exists yet.
-
-| Evidence | v0.2.0 value |
+| Evidence | Verified value |
 |---|---|
-| Frozen source commit | Pending release freeze |
-| Contract SHA-256 | Pending release freeze |
-| Studionet address / deployment tx | Not deployed |
-| Deployed source parity | Not applicable yet |
-| Live v0.2.0 lifecycle | Not run |
+| Network | GenLayer Studionet, chain ID 61999 |
+| Frozen source commit | `dea00c4e656f74958ae3596c0de0934bae652b39` |
+| Contract SHA-256 | `2fb1e76316fa4ae36ed3bbb3986cc2f4f4110dbef126e4706d520ad748b96b2a` |
+| Source length | 30,854 bytes local and deployed |
+| Contract address | [`0x8E1C18c660bf14d684ea5C1827D8d99BE27442f7`](https://explorer-studio.genlayer.com/address/0x8E1C18c660bf14d684ea5C1827D8d99BE27442f7) |
+| Deployment transaction | [`0xbc0797477e26d1f0247ef91c301ed5a3b0a758bff89e50861521717b8949e485`](https://explorer-studio.genlayer.com/tx/0xbc0797477e26d1f0247ef91c301ed5a3b0a758bff89e50861521717b8949e485) |
+| Deployment result | FINALIZED / MAJORITY_AGREE / GenVM SUCCESS |
+| Source parity | VERIFIED byte-for-byte with `gen_getContractCode`; SHA-256 equal |
+| `get_info()` | Counta 0.2.0; minimum deposit `1000000000000000` wei; minimum confidence 75; text/image limits 16,000 / 2,000,000 bytes; three review and infrastructure attempts; 900-second retry cooldown |
+| Release checks at frozen source commit | 47 Direct Mode tests passed; preflight, GenVM lint, ABI/schema passed; GitHub Actions run `37327672092` passed |
+| Live lifecycle | Completed below; beneficiary child transfer independently verified `value_credited=true` |
 
-Do not submit the historical address below as evidence for v0.2.0. A fresh
-deployment and raw deployed-source parity check are required after source freeze.
+### v0.2.0 live lifecycle
+
+The sponsor was `0x865e118a3be4FA0760775565fCd31be156e1e3d7`; the designated
+beneficiary was `0x2cd419603eBa593074653930Ddc4073d4FD8fc60`. The escrow was the
+minimum 0.001 GEN (`1000000000000000` wei). The unique milestone ID was
+`COUNTA-V020-LIVE-20261005-001`.
+
+The deliverable fixture was 59 UTF-8 bytes from
+[`https://raw.githubusercontent.com/Bibidee/counta/dea00c4e656f74958ae3596c0de0934bae652b39/evidence/live-deliverable.txt`](https://raw.githubusercontent.com/Bibidee/counta/dea00c4e656f74958ae3596c0de0934bae652b39/evidence/live-deliverable.txt),
+SHA-256 `b2006a039e3ac90264b58902ea6a573fb18f8c4871f0e60af70555287d2eebe9`.
+The independent evidence fixture was 82 UTF-8 bytes from
+[`https://cdn.jsdelivr.net/gh/Bibidee/counta@dea00c4e656f74958ae3596c0de0934bae652b39/evidence/live-verification.txt`](https://cdn.jsdelivr.net/gh/Bibidee/counta@dea00c4e656f74958ae3596c0de0934bae652b39/evidence/live-verification.txt),
+SHA-256 `48d94b3537b97d678e5d6c436ce686f7837140acfbc7aeadb74caabbb39739a4`.
+Both URLs returned HTTP 200 and used distinct HTTPS hostnames.
+
+| Step | Transaction | Finalized result |
+|---|---|---|
+| `create_milestone` | [`0xe508ba728e0164c3c19b26176274c27bb4b2d2ee0e8dc7bfaf4be8fc9869bb52`](https://explorer-studio.genlayer.com/tx/0xe508ba728e0164c3c19b26176274c27bb4b2d2ee0e8dc7bfaf4be8fc9869bb52) | FINALIZED / MAJORITY_AGREE / GenVM SUCCESS; state `funded`, deposit 0.001 GEN |
+| `accept_milestone` | [`0x9293d8c1c68a2a458ed49e0aff0e3e3a7a75568b8b70be7f54d051095513d9f3`](https://explorer-studio.genlayer.com/tx/0x9293d8c1c68a2a458ed49e0aff0e3e3a7a75568b8b70be7f54d051095513d9f3) | FINALIZED / MAJORITY_AGREE / GenVM SUCCESS; state `active` |
+| `submit_delivery` | [`0xcef35b31c9a9e075b7a004f0a4f08cbfb447461f6f4907b208eb779f2af80607`](https://explorer-studio.genlayer.com/tx/0xcef35b31c9a9e075b7a004f0a4f08cbfb447461f6f4907b208eb779f2af80607) | FINALIZED / MAJORITY_AGREE / GenVM SUCCESS; state `submitted`; committed URLs and hashes match |
+| `review` | [`0xdc9a601abce30b5d65c00d64b50cc69b39c95d164b431caeed0880f97f955c46`](https://explorer-studio.genlayer.com/tx/0xdc9a601abce30b5d65c00d64b50cc69b39c95d164b431caeed0880f97f955c46) | FINALIZED / MAJORITY_AGREE / GenVM SUCCESS; `approved`, confidence 100 |
+| `settle` | [`0xfc0bac78a8e5dc8aed0f645c587fcc27c265148732b3a6e4e7555d9aee350de0`](https://explorer-studio.genlayer.com/tx/0xfc0bac78a8e5dc8aed0f645c587fcc27c265148732b3a6e4e7555d9aee350de0) | FINALIZED / MAJORITY_AGREE / GenVM SUCCESS; `payout_dispatched`, ledger `deposited=0`, beneficiary amount 0.001 GEN |
+| Child transfer | [`0x0a2289971dae55a32a0e751c05173473b5cb121dda3ba2e234460b7333f25f3f`](https://explorer-studio.genlayer.com/tx/0x0a2289971dae55a32a0e751c05173473b5cb121dda3ba2e234460b7333f25f3f) | FINALIZED; recipient is beneficiary, value 0.001 GEN, `value_credited=true` (child result `NO_MAJORITY`) |
+
+The canonical final milestone read reports `status=payout_dispatched`,
+`settlement=beneficiary_payout_dispatched`, `deposited=0`, and
+`beneficiary_dispatched_amount=1000000000000000`. The beneficiary balance read
+after the child transfer was 448.9979 GEN. Counta's status means the payout was
+dispatched; the separate child receipt is the evidence that the transfer was
+credited.
 
 ## Historical deployment: v0.1.0 (superseded)
 
@@ -65,7 +95,7 @@ Its receipt was `FINALIZED`, result `NO_MAJORITY`, with `value_credited=true` fo
 to 448.9969 GEN. This is specifically a v0.1.0 observation, not evidence that
 all future child transfers succeed.
 
-## v0.2.0 release gate and deployment procedure
+## v0.2.0 release gate
 
 The pinned package set is in `requirements.txt`. On Python 3.12 run:
 
@@ -81,19 +111,13 @@ byte equality with committed `artifacts/counta.abi.json`, then runs the genuine
 Direct Mode tests. Any mismatch or failed check blocks release. CI invokes the
 same preflight script.
 
-v0.2.0 has not been deployed or published as a release, so its version remains
-`0.2.0` while these pre-deployment changes are finalized. The old v0.1.0 address
-does not include them.
-
-After freezing v0.2.0 source, record its commit and raw SHA-256, deploy only
-`contracts/counta.py` to Studionet, wait for finalization, check `get_info()`
-reports `0.2.0`, retrieve the deployed raw source with `gen_getContractCode`
-or equivalent and compare bytes. Then run a fresh lifecycle exercising
-create → accept → submit → review → dispatch, plus failure/refund and semantic-
-uncertainty retry/exhaustion behavior. Preserve child-transfer receipts separately.
-Update the v0.2.0 table above only with observed results. Do not infer successful
-recipient credit from Counta's `*_dispatched` state alone: verify each emitted
-child transfer receipt/result and `value_credited` when available.
+The source was frozen at the commit and hash above before deployment. Release
+checks and hosted CI passed on that source commit. The previous v0.1.0 address
+below does not include v0.2.0 changes. The live table above records only
+finalized transactions observed on the v0.2.0 address; no failure/refund or
+uncertainty-exhaustion live flow is claimed here. Preserve child-transfer
+receipts separately and do not infer recipient credit from `*_dispatched` state
+alone.
 
 The v0.2.0 policy requires affirmative approval for beneficiary payment. Valid
 semantic uncertainty is retryable twice and becomes `blocked` with

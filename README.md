@@ -104,11 +104,19 @@ These are operational requirements, not guarantees the contract can create:
 
 ## Release status
 
-- Current source: **v0.2.0, not deployed**. The existing Studionet v0.1.0
-  deployment below is historical and does not contain these changes.
+- Current source: **v0.2.0**, deployed to Studionet at
+  [`0x8E1C18c660bf14d684ea5C1827D8d99BE27442f7`](https://explorer-studio.genlayer.com/address/0x8E1C18c660bf14d684ea5C1827D8d99BE27442f7).
+- Frozen source commit: `dea00c4e656f74958ae3596c0de0934bae652b39`; source SHA-256:
+  `2fb1e76316fa4ae36ed3bbb3986cc2f4f4110dbef126e4706d520ad748b96b2a`.
+- Deployment [`0xbc0797477e26d1f0247ef91c301ed5a3b0a758bff89e50861521717b8949e485`](https://explorer-studio.genlayer.com/tx/0xbc0797477e26d1f0247ef91c301ed5a3b0a758bff89e50861521717b8949e485)
+  finalized with `MAJORITY_AGREE` and GenVM `SUCCESS`. Retrieved deployed source
+  matched the local 30,854 bytes byte-for-byte.
 - Deployable contract sources: exactly `contracts/counta.py`.
 - No frontend or additional trusted service is required.
-- v0.2.0 source parity, deployment and live lifecycle evidence: **pending**.
+- Live v0.2.0 lifecycle completed: funded → accepted → submitted → approved →
+  payout dispatched. The beneficiary child transfer finalized with
+  `value_credited=true`; the canonical milestone ledger is zero. Transaction
+  details are recorded in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 Historical v0.1.0 deployment and its verified live lifecycle are preserved in
 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Do not present that address, old source
