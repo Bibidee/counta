@@ -107,7 +107,29 @@ contract source, not a fake GenLayer module.
 - Source parity: byte-for-byte verified using `gen_getContractCode` (28,803 bytes)
 - `get_info()`: Counta `0.1.0`, minimum deposit `1000000000000000` wei, minimum confidence `75`
 - Release checks: 26 Direct Mode tests passed; lint, schema, and preflight passed; [GitHub Actions](https://github.com/Bibidee/counta/actions/runs/37259378417) passed
-- Live milestone review and escrow payout: **not yet verified**
+- Live milestone lifecycle: **verified**; details below
 
 See [Design](docs/DESIGN.md) and [Deployment](docs/DEPLOYMENT.md). Do not
 represent local mocked tests as live milestone or payout evidence.
+
+## Live Studionet lifecycle
+
+On 2026-10-05, a real milestone completed on the deployed contract:
+
+| Step | Transaction | Result |
+|---|---|---|
+| Fund milestone | [0xdf57f8efce5952dd98316e11eee62cab3e772dacbcfa0d6cc39b2e408000b057](https://explorer-studio.genlayer.com/tx/0xdf57f8efce5952dd98316e11eee62cab3e772dacbcfa0d6cc39b2e408000b057) | FINALIZED, MAJORITY_AGREE, GenVM SUCCESS; 0.001 GEN deposited |
+| Submit delivery | [0xff822ce404f8489e48aa092b9cbd7642592b0d6341e1bdb854dd6d91dab09f66](https://explorer-studio.genlayer.com/tx/0xff822ce404f8489e48aa092b9cbd7642592b0d6341e1bdb854dd6d91dab09f66) | FINALIZED, MAJORITY_AGREE, GenVM SUCCESS |
+| Semantic review | [0xa990532e0dfae5325d506d96664e54bca1209423893c99a98dfca6b80e4aeac7](https://explorer-studio.genlayer.com/tx/0xa990532e0dfae5325d506d96664e54bca1209423893c99a98dfca6b80e4aeac7) | FINALIZED, MAJORITY_AGREE, GenVM SUCCESS; APPROVED, confidence 85 |
+| Settle escrow | [0x472a821d53720d485f98ee06372f47d7fac94448aa3cce5af45a249e666b8447](https://explorer-studio.genlayer.com/tx/0x472a821d53720d485f98ee06372f47d7fac94448aa3cce5af45a249e666b8447) | FINALIZED, MAJORITY_AGREE, GenVM SUCCESS; ledger zeroed and full amount assigned to beneficiary |
+
+The live fixture was `COUNTA-LIVE-20261005-001`. Its [deliverable](https://raw.githubusercontent.com/Bibidee/counta/524ab720e10f632a6a038e58f89cefc169f85ae1/evidence/live-deliverable.txt)
+was committed as SHA-256 `b2006a039e3ac90264b58902ea6a573fb18f8c4871f0e60af70555287d2eebe9`;
+the [verification evidence](https://cdn.jsdelivr.net/gh/Bibidee/counta@524ab720e10f632a6a038e58f89cefc169f85ae1/evidence/live-verification.txt)
+was committed as SHA-256 `48d94b3537b97d678e5d6c436ce686f7837140acfbc7aeadb74caabbb39739a4`.
+The contract’s final read reports `status=settled`, `settlement=pay_beneficiary`,
+`deposited=0`, and `beneficiary_amount=1000000000000000` wei. The emitted transfer
+has child transaction [0x395dcd4d47ca6783e336899cc9f28012f77e531a2853dca6c20732a11c928f76](https://explorer-studio.genlayer.com/tx/0x395dcd4d47ca6783e336899cc9f28012f77e531a2853dca6c20732a11c928f76):
+its receipt says `FINALIZED`, `NO_MAJORITY`, and `value_credited=true`. The
+beneficiary’s observed balance rose from 448.9959 to 448.9969 GEN, matching the
+0.001 GEN payout. This unusual child result is recorded rather than hidden.
