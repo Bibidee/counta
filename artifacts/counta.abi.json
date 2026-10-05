@@ -4,6 +4,18 @@
     "kwparams": {}
   },
   "methods": {
+    "accept_milestone": {
+      "params": [
+        [
+          "milestone_id",
+          "string"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
     "cancel": {
       "params": [
         [

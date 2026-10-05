@@ -1,75 +1,99 @@
-# Counta design
+# Counta protocol design (v0.2.0)
 
-Counta is a standalone milestone-evidence escrow primitive. The sponsor funds
-the escrow with native GEN when creating the milestone. The contract records
-the actual `gl.message.value` as the sole payout ledger, separately from the
-milestone terms. A designated beneficiary may submit exactly one deliverable
-and supporting evidence package. The immutable brief, parties, amount, and
-deadlines cannot be edited after funding.
+Counta is a reusable milestone escrow primitive. Funding terms, parties and the
+delivery deadline are fixed when the sponsor deposits GEN. The beneficiary must
+explicitly accept before doing the committed work. One text/image deliverable
+and its textual evidence are then pinned by URL and exact raw-byte SHA-256.
+GenLayer validators independently fetch and verify those bytes and judge them
+against the immutable brief. Deterministic code—not model rationale—controls
+the state transition and escrow dispatch.
 
-## Review model
+## State and transitions
 
-The contract fetches the committed artifact and evidence itself. It hashes the
-exact raw response bytes with SHA-256 before decoding text or passing raw PNG or
-JPEG bytes to GenLayer's image-capable prompt interface. A successful review
-requires independently repeated observation and agreement on the exact semantic
-tuple `deliverable_match`, `evidence_support`, and `risk`; the confidence values
-must be within 20 points and must derive the same authorization outcome.
-Rationale is explanatory only. `APPROVED` requires `yes / yes / no` and
-confidence of at least 75. Explicit contradiction or failure is `BLOCKED`;
-uncertainty, low confidence, transient fetch failure, and malformed model
-output are non-approving and retryable. After three finalized non-approving
-reviews the milestone becomes `INCONCLUSIVE`.
+| Current state | Trigger / condition | Next state | Ledger and disposition |
+|---|---|---|---|
+| — | Sponsor creates with payable value | `funded` | Exact `gl.message.value` held |
+| `funded` | Named beneficiary accepts before deadline | `active` | No ledger movement; terms unchanged |
+| `funded` | Sponsor cancels before acceptance | `refund_dispatched` | Ledger zeroed; full sponsor refund message emitted |
+| `funded` or `active` | `now >= deliver_by`, no submission | `refund_dispatched` | Ledger zeroed; full sponsor refund message emitted |
+| `active` | Beneficiary submits once while `now < deliver_by` | `submitted` | Hashes and URLs fixed; review deadline starts |
+| `submitted` / `retryable` | Agreed strict safe tuple, confidence >= 75 | `approved` | Funds remain held pending dispatch |
+| `submitted` / `retryable` | Agreed substantive rejection or artifact integrity failure | `blocked` | Funds remain held pending sponsor refund dispatch |
+| `submitted` / `retryable` | Valid, hash-verified semantic result is uncertain | `retryable` or `inconclusive` | Counts against semantic budget; third such result produces `inconclusive` |
+| `submitted` / `retryable` | Fetch/provider/LLM/malformed-output failure | `retryable` or `blocked` | Separate infrastructure budget; third failure is sponsor-refund eligible |
+| `submitted` / `retryable` | `now >= review_deadline` before `inconclusive` | `refund_dispatched` | Sponsor receives full ledger; never a timeout split |
+| `approved` | Anyone calls `settle` | `payout_dispatched` | Ledger zeroed; full beneficiary transfer message emitted |
+| `blocked` | Anyone calls `settle` | `refund_dispatched` | Ledger zeroed; full sponsor transfer message emitted |
+| `inconclusive` | Anyone calls `settle` | `split_dispatched` | Ledger zeroed; exact 50/50 split messages emitted; odd wei to beneficiary |
 
-All artifacts, briefs, summaries, and evidence are untrusted content. The
-prompt states that artifact instructions are data, not instructions. Image
-support is limited to raw PNG/JPEG deliverables; evidence remains UTF-8 text.
+Dispatched states are terminal. No second settlement/expiry call can dispatch
+the same ledger again. Sponsor cancellation becomes unavailable once the
+beneficiary accepts. The deadline is measured from creation, not acceptance.
 
-## Lifecycle and escrow outcomes
+## Review budgets and economic policy
 
-| From | Trigger | To / accounting |
-|---|---|---|
-| — | Sponsor creates payable milestone | `FUNDED`; exact `gl.message.value` held |
-| `FUNDED` | Beneficiary submits once before `deliver_by` | `SUBMITTED`; brief/parties/funds unchanged |
-| `FUNDED` | Sponsor cancels before submission | `CANCELLED`; full refund to sponsor |
-| `FUNDED` | Deadline passes without delivery; anyone calls `expire` | `EXPIRED`; full refund to sponsor |
-| `SUBMITTED` / `RETRYABLE` | Agreed semantic approval | `APPROVED`; funds remain held until settlement |
-| `SUBMITTED` / `RETRYABLE` | Agreed substantive rejection or integrity failure | `BLOCKED`; funds remain held until settlement |
-| `SUBMITTED` / `RETRYABLE` | Uncertainty, malformed output, or transient failure | `RETRYABLE`, up to three finalized attempts; then `INCONCLUSIVE` |
-| `APPROVED` | Anyone calls `settle` | `SETTLED`; full amount emitted to beneficiary |
-| `BLOCKED` | Anyone calls `settle` | `SETTLED`; full amount refunded to sponsor |
-| `INCONCLUSIVE` | Anyone calls `settle` | `SETTLED`; 50/50 split, odd wei remainder to beneficiary |
-| `SUBMITTED` / `RETRYABLE` | Review deadline passes; anyone calls `expire` or `settle` | `SETTLED`; same 50/50 split |
+Only the sponsor or named beneficiary can trigger `review`; unrelated callers
+cannot consume any review budget. Every finalized retryable outcome sets a
+15-minute cooldown. Valid semantic uncertainty increments `semantic_attempts`.
+After three such results, `INCONCLUSIVE` permits the pre-agreed 50/50 split.
+The split is therefore reachable only after three valid structured semantic
+analyses based on artifacts that were fetched, size-checked, hash-verified and
+decoded/validated successfully.
 
-Every settlement reads the deposited ledger, sets it to zero and records the
-one-time disposition before emitting GEN. A second settlement has no positive
-ledger to pay. Sponsor cancellation is possible only before the beneficiary
-submits. The beneficiary cannot overwrite a submitted artifact.
+Infrastructure failures have a separate three-attempt budget and never count
+as semantic uncertainty. This includes unavailable fetches (429/5xx/network),
+LLM execution failures, malformed model output and invalid consensus results.
+After three such finalized outcomes, Counta moves to `blocked`, which is
+sponsor-refund eligible. If the review deadline expires first while the
+milestone is still `submitted` or `retryable`, `expire` also dispatches the full
+ledger to the sponsor. Thus beneficiary-controlled source outages cannot earn
+a split. Integrity failures (hash mismatch, non-success HTTP response, empty
+or oversized bytes, invalid UTF-8, unsupported image type) fail closed as
+`blocked` and are sponsor-refund eligible.
 
-The 50/50 unresolved-review rule is an explicit risk allocation, not a claim
-that the contract can determine which party is right when consensus is
-unavailable. Participants must agree to it before funding. It ensures a
-deterministic, bounded exit rather than indefinitely locked funds.
+This policy intentionally places persistent evidence/provider availability
+risk on the beneficiary for payout purposes while preserving deterministic
+refund recovery. It does not establish which party caused a network failure.
 
-## Security boundaries
+## Semantic consensus and artifact binding
 
-- SHA-256 commitments bind review to exact fetched bytes; mismatch never
-  approves.
-- URLs must use HTTPS, port 443, and a syntactically valid hostname; localhost,
-  `.local`, and non-public IP literals are rejected. The contract cannot
-  reliably resolve DNS or guarantee redirect behavior, so URL admission is not
-  a complete network-layer SSRF defense.
-- A hash proves byte identity, not truth, authorship, completion, or legal
-  compliance.
-- The LLM/validator decision is semantic evidence assessment, not an oracle or
-  guarantee of real-world performance. Validators may disagree and transactions
-  may remain unfinalized under GenLayer consensus.
-- The model's bounded confidence is not a calibrated probability.
-- The escrow holds native GEN only; it does not support ERC-20 tokens or
-  cross-chain payouts.
-- A finalized contract settlement records the outcome and emits native-value
-  transfers. Integrators should also inspect the finalized transfer/message
-  results on the selected network.
-- Capacity is limited to 256 lifetime milestones; records are not deleted.
-- No post-review appeal/challenge flow exists in v0.1.0. Parties accept the
-  published review and timeout rules when funding.
+`run_nondet_unsafe` runs the same observation pipeline for leader and
+validators. The contract snapshots storage-backed review inputs before entering
+the nondeterministic callback. The callback fetches exact response bytes,
+verifies SHA-256 commitments, validates bounded UTF-8/image representations,
+then invokes `exec_prompt`. Untrusted brief, summary, deliverable and evidence
+are framed as data; instructions inside them must not be followed.
+
+Approval requires every accepted analysis to resolve to the same exact enum
+tuple (`deliverable_match`, `evidence_support`, `risk`) and final authorization
+decision. Confidence may vary by at most 20 points; rationale text is not
+compared. Approval is only `yes / yes / no` with confidence >= 75. A malformed
+output or disagreement never approves. SHA-256 binds bytes, not authorship,
+truth or real-world completion.
+
+## Escrow ledger and transfer messages
+
+`deposited` is the sole escrow ledger, initialized only from `gl.message.value`.
+Every terminal dispatch copies amounts into explicit `*_dispatched_amount`
+fields, zeros `deposited`, records a terminal `*_dispatched` status, and only
+then emits the external transfer message through `_send_gen`. Repeated dispatch
+is rejected because the ledger is zero and the status is terminal.
+
+The contract cannot synchronously observe whether a child value-transfer
+transaction was finally credited. A dispatched status proves Counta recorded
+the debit and emitted transfer message(s), not that each recipient received
+value. Integrators must verify child receipts/results and `value_credited` where
+the network exposes it. There is no unsupported callback or false “paid” flag.
+
+## Capacity and trust boundaries
+
+There is no fixed lifetime milestone cap; cancelling/expiring records cannot
+consume a global 256-entry quota. Historical TreeMap records are retained, so
+chain-level storage constraints/costs still bound practical use. No admin
+backdoor, appeal role, ERC-20 support or cross-chain payout exists.
+
+URLs are restricted to HTTPS on port 443 without credentials/fragments and
+reject local and non-public IP-literal targets. Static checks cannot guarantee
+DNS answers, redirects, provider behavior or consistent external availability
+for every validator. GenLayer consensus may disagree or remain undetermined;
+Counta does not promise to suppress that platform outcome.

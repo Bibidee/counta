@@ -1,89 +1,90 @@
 # Counta
 
-**Counta is a standalone GenLayer Intelligent Contract for milestone evidence
-escrow.** A sponsor locks native GEN against a fixed brief and a named
-beneficiary. The beneficiary submits one text or image deliverable with
-hash-bound supporting evidence. GenLayer validators independently fetch the
-exact committed artifacts and judge whether the work satisfies the brief.
-Deterministic contract logic controls retries, deadlines, and one-time
-settlement.
+Counta is a standalone GenLayer Intelligent Contract primitive for milestone
+evidence escrow. A sponsor funds a fixed brief and names a beneficiary. The
+beneficiary accepts the terms, then submits one text or image deliverable and
+textual evidence committed by exact-byte SHA-256 hashes. Validators independently
+fetch and verify the artifacts before semantically assessing the deliverable.
+Deterministic contract logic controls authorization, review budgets, deadlines,
+escrow accounting and transfer dispatch.
 
-Counta is an escrow primitive, not a frontend, marketplace, identity service,
+Counta is an escrow primitive—not a frontend, marketplace, identity provider,
 or guarantee that work is truthful or legally compliant.
 
 ## Why GenLayer?
 
-Ordinary contract code cannot reliably decide whether an unstructured file,
-photo, or evidence document substantively satisfies a natural-language
-milestone brief. Counta uses GenLayer's nondeterministic execution for that
-bounded semantic assessment while keeping custody accounting, access rules,
-deadline checks, and payouts deterministic. No single off-chain service is
-trusted to write the outcome: the result is subject to GenLayer validator
-consensus. Consensus can still disagree or fail to finalize; Counta does not
-promise to eliminate `UNDETERMINED` outcomes.
+Ordinary deterministic contract code cannot reliably decide whether an
+unstructured file, photograph or supporting evidence substantively satisfies a
+natural-language milestone brief. Counta uses GenLayer's independent validator
+observations and semantic review for that narrow judgment. No single off-chain
+decision service is trusted to authorize payout. The contract still does not
+eliminate validator disagreement, unavailable providers or `UNDETERMINED`
+consensus outcomes.
 
 ## Lifecycle
 
-1. **Fund:** sponsor calls payable `create_milestone`; only `gl.message.value`
-   is credited to the stored escrow ledger.
-2. **Submit:** the designated beneficiary submits once before the fixed
-   deadline, committing deliverable/evidence HTTPS URLs and SHA-256 hashes.
-3. **Review:** validators fetch raw bytes, verify hashes programmatically, then
-   assess the exact text or raw image plus evidence against the immutable brief.
-4. **Settle:** any account may trigger the deterministic payout after a
-   finalized decision: approved pays beneficiary; blocked refunds sponsor;
-   inconclusive or review timeout splits 50/50 (odd wei to beneficiary).
-5. **Recover:** sponsor may cancel before submission; anyone may refund an
-   unsubmitted milestone after its delivery deadline. Every route zeroes the
-   ledger before transfer and is one-time.
+1. **Fund:** sponsor calls payable `create_milestone`; exact `gl.message.value`
+   becomes the escrow ledger.
+2. **Accept:** only the named beneficiary may call `accept_milestone`. The sponsor
+   can cancel only before this acceptance. The delivery deadline is fixed at
+   creation and is not extended by acceptance.
+3. **Submit:** accepted beneficiary submits once, strictly before `deliver_by`,
+   committing distinct-host HTTPS URLs and SHA-256 hashes.
+4. **Review:** only sponsor or beneficiary may trigger review. Retries have a
+   15-minute cooldown and separate bounded semantic/infrastructure counters.
+5. **Dispatch:** approved sends the full ledger to the beneficiary; substantive
+   rejection or exhausted infrastructure failures refund the sponsor; only
+   three valid, hash-verified semantic uncertainty results may reach the 50/50
+   uncertainty split. All state debits happen before external transfer messages.
+6. **Recover:** unaccepted/unsubmitted delivery expiry refunds the sponsor.
+   Review-window expiry also refunds the sponsor unless valid semantic
+   uncertainty already reached `INCONCLUSIVE`.
 
-| Result | Settlement |
-|---|---|
-| `approved` | Entire escrow to beneficiary |
-| `blocked` | Entire escrow back to sponsor |
-| `inconclusive` / review timeout | 50/50 sponsor/beneficiary split |
-| Unsubmitted delivery deadline / pre-submit cancellation | Entire escrow back to sponsor |
+## Security and accounting
 
-Three finalized retryable reviews (for example, unavailable sources, malformed
-model output, or low-confidence/unclear assessment) produce `inconclusive` so a
-public deterministic split is available. Consensus-level disagreement may
-prevent a review transaction from finalizing; if the review window later
-expires, the same timeout split applies.
+- Raw response bytes are SHA-256 checked before text decoding or image review.
+  Hash mismatch, bad HTTP status, empty/oversized content, invalid UTF-8 and
+  unsupported images fail closed and cannot approve.
+- Approval requires `deliverable_match=yes`, `evidence_support=yes`, `risk=no`,
+  confidence at least 75, and validator agreement on the bounded semantic tuple
+  with confidence values no more than 20 points apart. Rationale wording is not
+  consensus-critical.
+- Artifact and evidence contents are untrusted prompt data. Images are raw PNG
+  or JPEG only; text and evidence must be UTF-8.
+- Infrastructure failures and malformed model output consume only the separate
+  infrastructure budget. After three finalized such failures, the milestone is
+  sponsor-refund eligible; these failures never cause beneficiary payment or a
+  split. A retry cooldown applies. Only valid semantic uncertainty can split.
+- The beneficiary must accept before sponsor cancellation is locked. `deliver_by`
+  is measured from creation; submission is valid only while `now < deliver_by`,
+  while expiry is valid at `now >= deliver_by`. Review follows the same strict
+  boundary at `review_deadline`.
+- Contract-level milestone count has no fixed lifetime cap. Historical records
+  remain stored, so chain/storage limits and costs still apply.
+- Terminal statuses say `*_dispatched`, not “paid” or “settled”. Counta debits
+  its escrow ledger and emits external GEN transfer messages, but cannot observe
+  a recipient's child-transfer credit through a reliable callback. Integrators
+  must inspect each child transaction/result, including `value_credited`, before
+  treating the beneficiary or sponsor as paid.
+- HTTPS syntax checks cannot guarantee public DNS resolution or safe redirect
+  behavior at every validator. SHA-256 proves byte identity, not provenance or
+  truth. Model confidence is not a calibrated probability.
 
-## Artifact and image commitments
+## Release status
 
-Counta computes SHA-256 on the exact raw HTTP response bytes before any UTF-8
-decoding. Text deliverables and textual evidence must decode as UTF-8. Image
-deliverables support raw PNG/JPEG bytes passed to `gl.nondet.exec_prompt` via
-its documented `images` argument; images are capped at 2 MB. Evidence is UTF-8
-text capped at 16 KB. Prompt instructions treat brief, summary, artifacts, and
-evidence as untrusted data. Hash mismatch, unsupported image, empty artifact,
-bad HTTP response, or invalid UTF-8 cannot approve. Transient network/provider
-failures remain non-approving and retryable.
+- Current source: **v0.2.0, not deployed**. The existing Studionet v0.1.0
+  deployment below is historical and does not contain these changes.
+- Deployable contract sources: exactly `contracts/counta.py`.
+- No frontend or additional trusted service is required.
+- v0.2.0 source parity, deployment and live lifecycle evidence: **pending**.
 
-## Security model and tradeoffs
-
-- Exact SHA-256 bindings prevent silent replacement between commitment and
-  review; a hash does not prove authorship or truth.
-- HTTPS validation rejects localhost, `.local`, non-public IP literals,
-  non-443 ports, credentials, fragments, and malformed hosts. It cannot prove
-  DNS answers or redirect safety in every validator environment.
-- Approval requires the same exact semantic outcome and safety fields across
-  validators, with confidence within 20 points. Rationale wording is not
-  consensus-critical. Approval requires `deliverable_match=yes`,
-  `evidence_support=yes`, `risk=no`, and confidence >= 75.
-- Uncertainty is not approval. Explicit semantic rejection is blocked; unclear
-  assessments or provider/source problems are retryable, then inconclusive.
-- An inconclusive milestone splits principal evenly. This bounded risk-sharing
-  rule must be understood by both parties before funding.
-- There is no challenge/appeal phase after review in v0.1.0.
-- Records are bounded to 256 lifetime milestones and cannot be deleted.
-- Native GEN is sent using GenLayer external value-transfer messages. Verify
-  finalized transfer/message results in addition to the contract's ledger state.
+Historical v0.1.0 deployment and its verified live lifecycle are preserved in
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Do not present that address, old source
+hash or lifecycle as proof of v0.2.0.
 
 ## Build and test
 
-Prerequisite: Python 3.12.
+Use Python 3.12 and pinned dependencies:
 
 ```powershell
 python -m pip install -r requirements.txt
@@ -91,45 +92,6 @@ python -m pytest tests/direct -q
 python scripts/preflight.py
 ```
 
-Preflight also runs GenVM lint and ABI/schema generation. The tests use the
-official pinned `genlayer-test` Direct Mode fixtures (`direct_deploy`,
-`direct_vm`, test accounts, `mock_web`, and `mock_llm`); they exercise the actual
-contract source, not a fake GenLayer module.
-
-## Current release status
-
-- Version: `0.1.0`
-- Deployable sources: exactly one, `contracts/counta.py`
-- Studionet contract: [`0xF9e67Ff6f8a156a5357Ae8802402E11814B8887b`](https://explorer-studio.genlayer.com/address/0xF9e67Ff6f8a156a5357Ae8802402E11814B8887b)
-- Deployment transaction: [`0x70a708646708dc4cc171a49f79eb1dfe6c41e13ff02218fd9e826ae2906d2272`](https://explorer-studio.genlayer.com/tx/0x70a708646708dc4cc171a49f79eb1dfe6c41e13ff02218fd9e826ae2906d2272)
-- Deployment: `FINALIZED`, `MAJORITY_AGREE`, GenVM `SUCCESS`
-- Source SHA-256: `d27387ed2f3522a37a642639221b840b9b9faf5426e2f0c079cbbf2a3addc4d5`
-- Source parity: byte-for-byte verified using `gen_getContractCode` (28,803 bytes)
-- `get_info()`: Counta `0.1.0`, minimum deposit `1000000000000000` wei, minimum confidence `75`
-- Release checks: 26 Direct Mode tests passed; lint, schema, and preflight passed; [GitHub Actions](https://github.com/Bibidee/counta/actions/runs/37259378417) passed
-- Live milestone lifecycle: **verified**; details below
-
-See [Design](docs/DESIGN.md) and [Deployment](docs/DEPLOYMENT.md). Do not
-represent local mocked tests as live milestone or payout evidence.
-
-## Live Studionet lifecycle
-
-On 2026-10-05, a real milestone completed on the deployed contract:
-
-| Step | Transaction | Result |
-|---|---|---|
-| Fund milestone | [0xdf57f8efce5952dd98316e11eee62cab3e772dacbcfa0d6cc39b2e408000b057](https://explorer-studio.genlayer.com/tx/0xdf57f8efce5952dd98316e11eee62cab3e772dacbcfa0d6cc39b2e408000b057) | FINALIZED, MAJORITY_AGREE, GenVM SUCCESS; 0.001 GEN deposited |
-| Submit delivery | [0xff822ce404f8489e48aa092b9cbd7642592b0d6341e1bdb854dd6d91dab09f66](https://explorer-studio.genlayer.com/tx/0xff822ce404f8489e48aa092b9cbd7642592b0d6341e1bdb854dd6d91dab09f66) | FINALIZED, MAJORITY_AGREE, GenVM SUCCESS |
-| Semantic review | [0xa990532e0dfae5325d506d96664e54bca1209423893c99a98dfca6b80e4aeac7](https://explorer-studio.genlayer.com/tx/0xa990532e0dfae5325d506d96664e54bca1209423893c99a98dfca6b80e4aeac7) | FINALIZED, MAJORITY_AGREE, GenVM SUCCESS; APPROVED, confidence 85 |
-| Settle escrow | [0x472a821d53720d485f98ee06372f47d7fac94448aa3cce5af45a249e666b8447](https://explorer-studio.genlayer.com/tx/0x472a821d53720d485f98ee06372f47d7fac94448aa3cce5af45a249e666b8447) | FINALIZED, MAJORITY_AGREE, GenVM SUCCESS; ledger zeroed and full amount assigned to beneficiary |
-
-The live fixture was `COUNTA-LIVE-20261005-001`. Its [deliverable](https://raw.githubusercontent.com/Bibidee/counta/524ab720e10f632a6a038e58f89cefc169f85ae1/evidence/live-deliverable.txt)
-was committed as SHA-256 `b2006a039e3ac90264b58902ea6a573fb18f8c4871f0e60af70555287d2eebe9`;
-the [verification evidence](https://cdn.jsdelivr.net/gh/Bibidee/counta@524ab720e10f632a6a038e58f89cefc169f85ae1/evidence/live-verification.txt)
-was committed as SHA-256 `48d94b3537b97d678e5d6c436ce686f7837140acfbc7aeadb74caabbb39739a4`.
-The contract’s final read reports `status=settled`, `settlement=pay_beneficiary`,
-`deposited=0`, and `beneficiary_amount=1000000000000000` wei. The emitted transfer
-has child transaction [0x395dcd4d47ca6783e336899cc9f28012f77e531a2853dca6c20732a11c928f76](https://explorer-studio.genlayer.com/tx/0x395dcd4d47ca6783e336899cc9f28012f77e531a2853dca6c20732a11c928f76):
-its receipt says `FINALIZED`, `NO_MAJORITY`, and `value_credited=true`. The
-beneficiary’s observed balance rose from 448.9959 to 448.9969 GEN, matching the
-0.001 GEN payout. This unusual child result is recorded rather than hidden.
+Preflight compiles the source/tests, runs GenVM lint, regenerates and compares
+the ABI against the committed artifact, and executes the official pinned
+GenLayer Direct Mode tests against the actual contract. CI runs the same gate.

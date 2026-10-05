@@ -1,13 +1,14 @@
-# v0.1.0
+# v0.2.0
 # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
-"""Counta: hash-bound milestone review with deterministic GEN escrow settlement.
+"""Counta: hash-bound milestone review with deterministic GEN escrow dispatch.
 
 Counta fixes the parties, brief, amount and delivery deadline when a sponsor
 funds a milestone. The designated beneficiary can submit one committed text or
 image deliverable plus textual evidence. Validators independently fetch and
 hash the exact bytes, then assess the committed material against the brief.
-Only a finalized APPROVED result can pay the beneficiary. Failed review refunds
-the sponsor; unresolved review has a bounded, documented split settlement.
+Only a finalized APPROVED result can dispatch payment to the beneficiary. A
+valid but persistently uncertain semantic review may split; infrastructure or
+integrity failures never mature into beneficiary-paying uncertainty settlement.
 """
 
 import hashlib
@@ -22,20 +23,22 @@ from genlayer import *
 
 
 FUNDED = "funded"
+ACTIVE = "active"
 SUBMITTED = "submitted"
 RETRYABLE = "retryable"
 APPROVED = "approved"
 BLOCKED = "blocked"
 INCONCLUSIVE = "inconclusive"
-SETTLED = "settled"
-CANCELLED = "cancelled"
-EXPIRED = "expired"
+PAYOUT_DISPATCHED = "payout_dispatched"
+REFUND_DISPATCHED = "refund_dispatched"
+SPLIT_DISPATCHED = "split_dispatched"
 
-RESULT_APPROVED = "pay_beneficiary"
-RESULT_BLOCKED = "refund_sponsor"
-RESULT_INCONCLUSIVE = "split_timeout"
+RESULT_APPROVED = "beneficiary_payout_dispatched"
+RESULT_BLOCKED = "sponsor_refund_dispatched"
+RESULT_INCONCLUSIVE = "uncertainty_split_dispatched"
+RESULT_CANCELLED = "pre_acceptance_cancel_refund_dispatched"
+RESULT_EXPIRED = "deadline_refund_dispatched"
 
-MAX_MILESTONES = 256
 MAX_ID = 96
 MAX_BRIEF = 1200
 MAX_SUMMARY = 400
@@ -51,6 +54,8 @@ MAX_REVIEW_WINDOW = 30 * 24 * 60 * 60
 MIN_CONFIDENCE = 75
 MAX_CONFIDENCE_DELTA = 20
 MAX_REVIEW_ATTEMPTS = 3
+MAX_INFRASTRUCTURE_ATTEMPTS = 3
+REVIEW_RETRY_COOLDOWN = 15 * 60
 EXPECTED = "[EXPECTED]"
 FIELDS = ("deliverable_match", "evidence_support", "risk", "confidence", "rationale")
 ENUM_FIELDS = ("deliverable_match", "evidence_support", "risk")
@@ -74,13 +79,16 @@ class Milestone:
     evidence_hash: str
     submission_summary: str
     status: str
+    semantic_attempts: u256
+    infrastructure_attempts: u256
+    next_review_at: u256
     confidence: u256
     rationale: str
     last_reason: str
     deposited: u256
-    settled_amount: u256
-    sponsor_amount: u256
-    beneficiary_amount: u256
+    dispatched_amount: u256
+    sponsor_dispatched_amount: u256
+    beneficiary_dispatched_amount: u256
     settlement: str
     review_attempts: u256
 
@@ -406,8 +414,6 @@ class Counta(gl.Contract):
         milestone_id = _identifier(milestone_id)
         if self.milestones.get(milestone_id) is not None:
             raise gl.vm.UserError(f"{EXPECTED} Milestone already exists")
-        if int(self.milestone_count) >= MAX_MILESTONES:
-            raise gl.vm.UserError(f"{EXPECTED} Milestone capacity reached")
         sponsor = gl.message.sender_address
         beneficiary_address = _address(beneficiary, "beneficiary")
         if beneficiary_address.as_hex.lower() == sponsor.as_hex.lower():
@@ -444,13 +450,26 @@ class Counta(gl.Contract):
             rationale="",
             last_reason="",
             deposited=amount,
-            settled_amount=u256(0),
-            sponsor_amount=u256(0),
-            beneficiary_amount=u256(0),
+            semantic_attempts=u256(0),
+            infrastructure_attempts=u256(0),
+            next_review_at=u256(0),
+            dispatched_amount=u256(0),
+            sponsor_dispatched_amount=u256(0),
+            beneficiary_dispatched_amount=u256(0),
             settlement="",
             review_attempts=u256(0),
         )
         self.milestone_count = u256(int(self.milestone_count) + 1)
+
+    @gl.public.write
+    def accept_milestone(self, milestone_id: str) -> None:
+        milestone = self._get(milestone_id)
+        if milestone.status != FUNDED or milestone.beneficiary != gl.message.sender_address:
+            raise gl.vm.UserError(f"{EXPECTED} Only beneficiary may accept a funded milestone")
+        if _now() >= int(milestone.deliver_by):
+            raise gl.vm.UserError(f"{EXPECTED} Acceptance deadline passed")
+        # deliver_by remains fixed from creation; acceptance never extends it.
+        milestone.status = ACTIVE
 
     @gl.public.write
     def submit_delivery(
@@ -459,10 +478,10 @@ class Counta(gl.Contract):
         evidence_url: str, evidence_hash: str, summary: str,
     ) -> None:
         milestone = self._get(milestone_id)
-        if milestone.status != FUNDED or milestone.beneficiary != gl.message.sender_address:
+        if milestone.status != ACTIVE or milestone.beneficiary != gl.message.sender_address:
             raise gl.vm.UserError(f"{EXPECTED} Only the beneficiary may submit once")
         now = _now()
-        if now > int(milestone.deliver_by):
+        if now >= int(milestone.deliver_by):
             raise gl.vm.UserError(f"{EXPECTED} Delivery deadline passed")
         if artifact_kind not in ("text", "image"):
             raise gl.vm.UserError(f"{EXPECTED} Unsupported artifact kind")
@@ -490,9 +509,17 @@ class Counta(gl.Contract):
         now = _now()
         if now >= int(milestone.review_deadline):
             raise gl.vm.UserError(f"{EXPECTED} Review deadline passed")
-        attempts = int(milestone.review_attempts)
-        if attempts >= MAX_REVIEW_ATTEMPTS:
-            raise gl.vm.UserError(f"{EXPECTED} Review attempts exhausted")
+        sender = gl.message.sender_address
+        if sender != milestone.sponsor and sender != milestone.beneficiary:
+            raise gl.vm.UserError(f"{EXPECTED} Only milestone parties may trigger review")
+        if now < int(milestone.next_review_at):
+            raise gl.vm.UserError(f"{EXPECTED} Review retry cooldown is active")
+        semantic_attempts = int(milestone.semantic_attempts)
+        infrastructure_attempts = int(milestone.infrastructure_attempts)
+        if semantic_attempts >= MAX_REVIEW_ATTEMPTS:
+            raise gl.vm.UserError(f"{EXPECTED} Semantic review attempts exhausted")
+        if infrastructure_attempts >= MAX_INFRASTRUCTURE_ATTEMPTS:
+            raise gl.vm.UserError(f"{EXPECTED} Infrastructure review attempts exhausted")
 
         # Copy storage-backed fields before entering nondeterministic execution.
         snapshot = {
@@ -504,7 +531,7 @@ class Counta(gl.Contract):
             "evidence_hash": str(milestone.evidence_hash),
             "submission_summary": str(milestone.submission_summary),
         }
-        milestone.review_attempts = u256(attempts + 1)
+        milestone.review_attempts = u256(int(milestone.review_attempts) + 1)
 
         def leader_fn():
             return _observe(snapshot)
@@ -517,8 +544,7 @@ class Counta(gl.Contract):
 
         result = gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
         if not isinstance(result, dict):
-            milestone.status = RETRYABLE if attempts + 1 < MAX_REVIEW_ATTEMPTS else INCONCLUSIVE
-            milestone.last_reason = "invalid_consensus_result"
+            self._record_infrastructure_failure(milestone, infrastructure_attempts, now, "invalid_consensus_result")
             return
         if result.get("kind") == "analysis" and _valid_analysis(result.get("analysis")):
             analysis = result["analysis"]
@@ -532,21 +558,36 @@ class Counta(gl.Contract):
                 milestone.status = BLOCKED
                 milestone.last_reason = "semantic_rejection"
             else:
-                milestone.status = RETRYABLE if attempts + 1 < MAX_REVIEW_ATTEMPTS else INCONCLUSIVE
+                semantic_attempts += 1
+                milestone.semantic_attempts = u256(semantic_attempts)
+                milestone.status = RETRYABLE if semantic_attempts < MAX_REVIEW_ATTEMPTS else INCONCLUSIVE
                 milestone.last_reason = "uncertain_or_low_confidence"
+                if milestone.status == RETRYABLE:
+                    milestone.next_review_at = u256(now + REVIEW_RETRY_COOLDOWN)
             return
         if result.get("kind") == "integrity_failure":
             milestone.status = BLOCKED
             milestone.last_reason = str(result.get("class", "integrity_failure"))[:64]
             return
         reason = str(result.get("class", "observation_failure"))[:64]
-        milestone.last_reason = reason
-        milestone.status = RETRYABLE if attempts + 1 < MAX_REVIEW_ATTEMPTS else INCONCLUSIVE
+        self._record_infrastructure_failure(milestone, infrastructure_attempts, now, reason)
+
+    def _record_infrastructure_failure(self, milestone: Milestone, attempts: int, now: int, reason: str) -> None:
+        attempts += 1
+        milestone.infrastructure_attempts = u256(attempts)
+        milestone.last_reason = reason[:64]
+        # Persistent fetch/provider/malformed-output failures are sponsor-safe:
+        # they cannot create semantic uncertainty or a beneficiary split.
+        if attempts >= MAX_INFRASTRUCTURE_ATTEMPTS:
+            milestone.status = BLOCKED
+            milestone.last_reason = "infrastructure_failure_sponsor_refund"
+        else:
+            milestone.status = RETRYABLE
+            milestone.next_review_at = u256(now + REVIEW_RETRY_COOLDOWN)
 
     @gl.public.write
     def settle(self, milestone_id: str) -> None:
         milestone = self._get(milestone_id)
-        now = _now()
         if milestone.status == APPROVED:
             beneficiary_amount = milestone.deposited
             sponsor_amount = u256(0)
@@ -559,27 +600,25 @@ class Counta(gl.Contract):
             sponsor_amount = u256(int(milestone.deposited) // 2)
             beneficiary_amount = u256(int(milestone.deposited) - int(sponsor_amount))
             recipient_mode = RESULT_INCONCLUSIVE
-        elif milestone.status in (SUBMITTED, RETRYABLE) and now >= int(milestone.review_deadline):
-            # Review-window expiry has the same neutral split as an inconclusive
-            # consensus outcome. It cannot silently approve either party.
-            sponsor_amount = u256(int(milestone.deposited) // 2)
-            beneficiary_amount = u256(int(milestone.deposited) - int(sponsor_amount))
-            milestone.last_reason = "review_deadline_expired"
-            recipient_mode = RESULT_INCONCLUSIVE
         else:
             raise gl.vm.UserError(f"{EXPECTED} Milestone is not settleable")
 
         amount = milestone.deposited
         if int(amount) <= 0:
-            raise gl.vm.UserError(f"{EXPECTED} Escrow already settled")
+            raise gl.vm.UserError(f"{EXPECTED} Escrow already dispatched")
         # Checks-effects-interactions: debit and mark terminal before emitting
         # either external transfer. Both sends are part of this finalized call.
         milestone.deposited = u256(0)
-        milestone.settled_amount = amount
-        milestone.sponsor_amount = sponsor_amount
-        milestone.beneficiary_amount = beneficiary_amount
+        milestone.dispatched_amount = amount
+        milestone.sponsor_dispatched_amount = sponsor_amount
+        milestone.beneficiary_dispatched_amount = beneficiary_amount
         milestone.settlement = recipient_mode
-        milestone.status = SETTLED
+        if int(sponsor_amount) and int(beneficiary_amount):
+            milestone.status = SPLIT_DISPATCHED
+        elif int(beneficiary_amount):
+            milestone.status = PAYOUT_DISPATCHED
+        else:
+            milestone.status = REFUND_DISPATCHED
         if int(sponsor_amount) > 0:
             _send_gen(milestone.sponsor, sponsor_amount)
         if int(beneficiary_amount) > 0:
@@ -589,46 +628,35 @@ class Counta(gl.Contract):
     def cancel(self, milestone_id: str) -> None:
         milestone = self._get(milestone_id)
         if milestone.status != FUNDED or milestone.sponsor != gl.message.sender_address:
-            raise gl.vm.UserError(f"{EXPECTED} Only sponsor may cancel before delivery")
-        self._refund_sponsor(milestone, CANCELLED, "sponsor_cancelled")
+            raise gl.vm.UserError(f"{EXPECTED} Only sponsor may cancel before beneficiary acceptance")
+        self._refund_sponsor(milestone, RESULT_CANCELLED, "sponsor_cancelled")
 
     @gl.public.write
     def expire(self, milestone_id: str) -> None:
         milestone = self._get(milestone_id)
         now = _now()
-        if milestone.status == FUNDED:
+        if milestone.status in (FUNDED, ACTIVE):
             if now < int(milestone.deliver_by):
                 raise gl.vm.UserError(f"{EXPECTED} Delivery deadline remains open")
-            self._refund_sponsor(milestone, EXPIRED, "delivery_not_submitted")
+            self._refund_sponsor(milestone, RESULT_EXPIRED, "delivery_not_submitted")
             return
         if milestone.status in (SUBMITTED, RETRYABLE) and now >= int(milestone.review_deadline):
-            sponsor_amount = u256(int(milestone.deposited) // 2)
-            beneficiary_amount = u256(int(milestone.deposited) - int(sponsor_amount))
-            amount = milestone.deposited
-            if int(amount) <= 0:
-                raise gl.vm.UserError(f"{EXPECTED} Escrow already settled")
-            milestone.deposited = u256(0)
-            milestone.settled_amount = amount
-            milestone.sponsor_amount = sponsor_amount
-            milestone.beneficiary_amount = beneficiary_amount
-            milestone.settlement = RESULT_INCONCLUSIVE
-            milestone.status = SETTLED
-            milestone.last_reason = "review_deadline_expired"
-            _send_gen(milestone.sponsor, sponsor_amount)
-            _send_gen(milestone.beneficiary, beneficiary_amount)
+            # No valid semantic uncertainty was reached: unresolved delivery,
+            # fetch, provider, or malformed-output failures refund the sponsor.
+            self._refund_sponsor(milestone, RESULT_EXPIRED, "review_deadline_sponsor_refund")
             return
         raise gl.vm.UserError(f"{EXPECTED} Milestone is not expirable")
 
-    def _refund_sponsor(self, milestone: Milestone, terminal_status: str, reason: str) -> None:
+    def _refund_sponsor(self, milestone: Milestone, settlement: str, reason: str) -> None:
         amount = milestone.deposited
         if int(amount) <= 0:
-            raise gl.vm.UserError(f"{EXPECTED} Escrow already settled")
+            raise gl.vm.UserError(f"{EXPECTED} Escrow already dispatched")
         milestone.deposited = u256(0)
-        milestone.settled_amount = amount
-        milestone.sponsor_amount = amount
-        milestone.beneficiary_amount = u256(0)
-        milestone.status = terminal_status
-        milestone.settlement = RESULT_BLOCKED
+        milestone.dispatched_amount = amount
+        milestone.sponsor_dispatched_amount = amount
+        milestone.beneficiary_dispatched_amount = u256(0)
+        milestone.status = REFUND_DISPATCHED
+        milestone.settlement = settlement
         milestone.last_reason = reason
         _send_gen(milestone.sponsor, amount)
 
@@ -655,9 +683,12 @@ class Counta(gl.Contract):
             "rationale": milestone.rationale,
             "last_reason": milestone.last_reason,
             "deposited": str(milestone.deposited),
-            "settled_amount": str(milestone.settled_amount),
-            "sponsor_amount": str(milestone.sponsor_amount),
-            "beneficiary_amount": str(milestone.beneficiary_amount),
+            "semantic_attempts": str(milestone.semantic_attempts),
+            "infrastructure_attempts": str(milestone.infrastructure_attempts),
+            "next_review_at": str(milestone.next_review_at),
+            "dispatched_amount": str(milestone.dispatched_amount),
+            "sponsor_dispatched_amount": str(milestone.sponsor_dispatched_amount),
+            "beneficiary_dispatched_amount": str(milestone.beneficiary_dispatched_amount),
             "settlement": milestone.settlement,
             "review_attempts": str(milestone.review_attempts),
         }
@@ -666,14 +697,16 @@ class Counta(gl.Contract):
     def get_info(self) -> dict:
         return {
             "name": "Counta",
-            "version": "0.1.0",
+            "version": "0.2.0",
             "min_confidence": str(MIN_CONFIDENCE),
             "max_confidence_delta": str(MAX_CONFIDENCE_DELTA),
             "max_text_artifact_bytes": str(MAX_TEXT_BYTES),
             "max_image_artifact_bytes": str(MAX_IMAGE_BYTES),
             "max_review_attempts": str(MAX_REVIEW_ATTEMPTS),
+            "max_infrastructure_attempts": str(MAX_INFRASTRUCTURE_ATTEMPTS),
+            "review_retry_cooldown_seconds": str(REVIEW_RETRY_COOLDOWN),
             "min_deposit": str(MIN_DEPOSIT),
-            "max_milestones": str(MAX_MILESTONES),
+            "milestone_capacity": "unbounded_by_contract",
             "milestone_count": str(self.milestone_count),
-            "unresolved_review_split_bps": "5000",
+            "semantic_uncertainty_split_bps": "5000",
         }

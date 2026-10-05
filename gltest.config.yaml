@@ -4,4 +4,4 @@ networks:
     url: "https://studio.genlayer.com/api"
 paths:
   contracts: "contracts"
-  artifacts: "artifacts"
+  artifacts: ".gltest-artifacts"

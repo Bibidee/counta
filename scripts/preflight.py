@@ -4,6 +4,7 @@ import hashlib
 import shutil
 import subprocess
 import sys
+import tempfile
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,7 +17,6 @@ source = SOURCES[0]
 raw = source.read_bytes()
 ast.parse(raw.decode("utf-8"), filename=str(source))
 subprocess.run([sys.executable, "-m", "compileall", "-q", "contracts", "tests"], cwd=ROOT, check=True)
-subprocess.run([sys.executable, "-m", "pytest", "tests/direct", "-q"], cwd=ROOT, check=True)
 
 lint = shutil.which("genvm-lint") or shutil.which("genvm-lint.exe")
 if not lint:
@@ -27,8 +27,16 @@ if not lint:
     raise SystemExit("genvm-lint is required for preflight; install requirements.txt")
 
 subprocess.run([lint, "check", str(source), "--json"], cwd=ROOT, check=True)
-(ROOT / "artifacts").mkdir(exist_ok=True)
-subprocess.run([lint, "schema", str(source), "--output", "artifacts/counta.abi.json"], cwd=ROOT, check=True)
+committed_abi = ROOT / "artifacts" / "counta.abi.json"
+if not committed_abi.is_file():
+    raise SystemExit("tracked ABI artifact is missing: artifacts/counta.abi.json")
+with tempfile.TemporaryDirectory(prefix="counta-schema-") as schema_dir:
+    generated_abi = Path(schema_dir) / "counta.abi.json"
+    subprocess.run([lint, "schema", str(source), "--output", str(generated_abi)], cwd=ROOT, check=True)
+    if generated_abi.read_bytes() != committed_abi.read_bytes():
+        raise SystemExit("generated ABI differs from committed artifacts/counta.abi.json")
+print("abi_matches_committed_artifact=PASS")
+subprocess.run([sys.executable, "-m", "pytest", "tests/direct", "-q"], cwd=ROOT, check=True)
 print("contract_sha256=" + hashlib.sha256(raw).hexdigest())
 print("deployable_contract_sources=1")
 print("preflight=PASS")
