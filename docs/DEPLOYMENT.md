@@ -1,28 +1,26 @@
 # Counta deployment and release evidence
 
-## Current candidate: v0.3.1 — NOT DEPLOYED
+## Current deployed release: v0.3.1
 
-v0.3.1 is a pre-deployment source candidate. It has no contract address,
-deployment transaction, deployed-source parity result, or v0.3.1 live lifecycle.
-It fixes the v0.3.0 infrastructure retry lockout, rejects all IP literals and
-single-label hostnames, and delays beneficiary alias creation until acceptance.
-Source candidate SHA-256: `9b98e0016a38e7c4ad8e613370b0667e7c4b37910e4dbaf26e99a6a1688be005`;
-source byte length: 36,535. These values describe only the current local source
-candidate and do not imply deployment or source parity.
-Do not use the historical v0.3.0 address as v0.3.1 evidence.
+| Evidence | Verified value |
+|---|---|
+| Network | GenLayer Studionet, chain ID 61999 |
+| Frozen source commit | `8c7d472522e90b481bce56794c175e2e951c99fa` |
+| Contract SHA-256 | `9b98e0016a38e7c4ad8e613370b0667e7c4b37910e4dbaf26e99a6a1688be005` |
+| Git blob SHA | `cc7c60a666d49d5d1293c71967aabdcaaeb95522` |
+| Source size | 36,535 bytes locally and as retrieved from Studionet |
+| Contract address | [`0xE4Bb7FC4C217EE867F14d40aFaa1e868693CDcAB`](https://explorer-studio.genlayer.com/address/0xE4Bb7FC4C217EE867F14d40aFaa1e868693CDcAB) |
+| Deployment transaction | [`0xa8b3ed6c3e0a6b297d5017350c7cef3b46f05fb0b3eb9ae8343a10b7d31ddced`](https://explorer-studio.genlayer.com/tx/0xa8b3ed6c3e0a6b297d5017350c7cef3b46f05fb0b3eb9ae8343a10b7d31ddced) |
+| Deployment result | FINALIZED / MAJORITY_AGREE / GenVM SUCCESS |
+| Source parity | VERIFIED byte-for-byte using `gen_getContractCode`; local and retrieved source SHA-256 and byte lengths match |
+| `get_info()` | Counta 0.3.1; minimum confidence 75; max text artifact 16,000 bytes; max image artifact 2,000,000 bytes; max review attempts 3; infrastructure telemetry cap 3; retry cooldown 900 seconds; minimum deposit `1000000000000000` wei; sponsor-scoped composite identity; sponsor-fixed exact evidence hostname; retryable infrastructure failures can be retried after cooldown until review deadline |
+| GitHub CI | PASS on frozen contract commit; run `37351550988` |
 
-### v0.3.1 release gate
-
-Use Python 3.12.14 with the exact dependency and transitive constraints locks.
-Require all Direct Mode tests, preflight, GenVM lint and byte-equal ABI/schema
-generation to pass, with no skips/failures. GitHub Actions must pass on the
-exact frozen contract commit. No claim is made here about branch protection
-settings; the release procedure requires checking the exact-head CI result and
-keeping the source frozen through deployment.
-
-Do not deploy this candidate in this release pass. Fresh source-parity evidence
-and new live approval, payout, outage-recovery, and refund/timeout lifecycles
-must be collected for v0.3.1 before claiming it is deployed.
+The v0.3.1 release changes the v0.3.0 infrastructure retry behavior, rejects
+all IP literals and single-label hostnames, and delays beneficiary alias
+creation until acceptance. This records deployment and exact source parity;
+it does not claim a fresh v0.3.1 live milestone review, payout, outage-recovery,
+or refund/timeout lifecycle. The v0.3.0 lifecycle below remains historical.
 
 ## Historical deployed release: v0.3.0 (superseded; not v0.3.1)
 
@@ -46,7 +44,7 @@ failure counter stopped all reviews after three outages, even while the review
 deadline remained open. Funds were not refundable early, but a party that had
 not caused the outage could not obtain a later adjudication after provider
 recovery. v0.3.1 removes that lockout; the v0.3.0 behavior remains historical
-and is not retroactively changed by this candidate.
+and is not retroactively changed by the v0.3.1 release.
 
 ### v0.3.0 live lifecycle
 
@@ -102,9 +100,9 @@ action commit references.
 
 The v0.3.0 contract source was frozen at the commit/hash above and matched the
 deployed source byte-for-byte at release. The documentation-only commit
-`c821389a2a2e174356adda347bfbdcdc127d295b` did not change it. The current
-v0.3.1 source candidate is intentionally different and is not deployed; the
-v0.3.0 address continues to refer only to its historical frozen bytes.
+`c821389a2a2e174356adda347bfbdcdc127d295b` did not change it. The v0.3.1
+source is intentionally different; the v0.3.0 address continues to refer only
+to its historical frozen bytes.
 
 ## Historical deployment: v0.2.0 (superseded)
 

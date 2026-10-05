@@ -24,7 +24,7 @@ and agree on the authorization outcome. No one model's rationale authorizes
 payment. This still cannot eliminate model fallibility, provider outages,
 validator disagreement, or protocol-level `UNDETERMINED` outcomes.
 
-## v0.3.1 candidate policy
+## v0.3.1 policy
 
 - Sponsor-fixed evidence authority: creation commits one normalized DNS
   hostname. Beneficiaries may submit evidence only from that exact hostname;
@@ -96,14 +96,19 @@ validator disagreement, or protocol-level `UNDETERMINED` outcomes.
 
 ## Release status
 
-**Current release candidate: v0.3.1 — NOT DEPLOYED.** It removes an
-infrastructure-retry lockout and hardens URL and alias admission. It has no
-address, deployment transaction, or live v0.3.1 lifecycle evidence yet. Its
-local candidate source SHA-256 is
-`9b98e0016a38e7c4ad8e613370b0667e7c4b37910e4dbaf26e99a6a1688be005` (36,535
-bytes).
+**Current deployed release: v0.3.1.** The Studionet contract is
+[`0xE4Bb7FC4C217EE867F14d40aFaa1e868693CDcAB`](https://explorer-studio.genlayer.com/address/0xE4Bb7FC4C217EE867F14d40aFaa1e868693CDcAB).
+Deployment transaction:
+[`0xa8b3ed6c3e0a6b297d5017350c7cef3b46f05fb0b3eb9ae8343a10b7d31ddced`](https://explorer-studio.genlayer.com/tx/0xa8b3ed6c3e0a6b297d5017350c7cef3b46f05fb0b3eb9ae8343a10b7d31ddced),
+FINALIZED / MAJORITY_AGREE / GenVM SUCCESS. The deployed source was retrieved
+through `gen_getContractCode` and verified byte-for-byte against frozen
+commit `8c7d472522e90b481bce56794c175e2e951c99fa`; both sources are 36,535
+bytes with SHA-256
+`9b98e0016a38e7c4ad8e613370b0667e7c4b37910e4dbaf26e99a6a1688be005`.
+`get_info()` reports Counta 0.3.1. A fresh v0.3.1 live milestone lifecycle
+has not yet been recorded; v0.3.0 lifecycle evidence below is historical.
 
-**Historical deployed release: v0.3.0.** It is deployed to Studionet at
+**Historical deployed release: v0.3.0 (superseded).** It is deployed to Studionet at
 [`0x4235915E7ec84596239b2d29B93d1a2A982A1018`](https://explorer-studio.genlayer.com/address/0x4235915E7ec84596239b2d29B93d1a2A982A1018).
 The deployment is `FINALIZED / MAJORITY_AGREE / GenVM SUCCESS`; retrieved
 deployed source matches the frozen local contract byte-for-byte. A real live
@@ -134,7 +139,7 @@ stdin workaround is limited to Windows.
 
 ## Release acceptance checklist
 
-Before deploying v0.3.1, require a clean frozen commit and passing tests,
+For a future contract release, require a clean frozen commit and passing tests,
 preflight, lint, schema, and GitHub Actions on that exact commit. Record the
 contract SHA-256, deploy only those exact bytes, retrieve and byte-compare the
 deployed source, verify `get_info()`, and inspect child transfer receipts and
