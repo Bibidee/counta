@@ -1,4 +1,4 @@
-# Counta protocol design (v0.3.1 candidate)
+# Counta protocol design (v0.3.1)
 
 Counta holds sponsor-provided GEN against one fixed milestone. The sponsor
 commits the parties, brief, delivery deadline, review window and exact allowed
@@ -6,12 +6,16 @@ evidence hostname before beneficiary acceptance. A single hash-bound submission
 is independently fetched and semantically assessed through GenLayer. Only
 deterministic state logic releases funds.
 
-v0.3.0 is the historical deployed release at
+v0.3.1 is the current deployed Studionet release at
+`0xE4Bb7FC4C217EE867F14d40aFaa1e868693CDcAB`. Its frozen source commit is
+`8c7d472522e90b481bce56794c175e2e951c99fa`; the contract SHA-256 is
+`9b98e0016a38e7c4ad8e613370b0667e7c4b37910e4dbaf26e99a6a1688be005` and
+contains 36,535 bytes. Deployed-source parity was verified byte-for-byte.
+v0.3.0 remains historical and superseded at
 `0x4235915E7ec84596239b2d29B93d1a2A982A1018`; its approval/payout evidence is
 preserved in `docs/DEPLOYMENT.md`. That version used a shared three-failure
 infrastructure ceiling: after three temporary failures, further review was
-locked out until deadline expiry. v0.3.1 removes that liveness lockout. The
-v0.3.1 source described here is a candidate only and is not deployed.
+locked out until deadline expiry. v0.3.1 removes that liveness lockout.
 
 ## Identity and evidence authority
 
@@ -31,7 +35,11 @@ that alias becomes ambiguous and callers must use the composite reference.
 This prevents an unrelated sponsor from poisoning a wallet's alias merely by
 nominating that wallet as beneficiary. The scoped storage key prevents
 unrelated wallets from reserving another sponsor's ID. Historical records are
-not deleted.
+not deleted. Because local IDs may contain `:`, an ID that syntactically
+resembles a canonical reference can be parsed as one before party-local alias
+lookup. Integrations should store and use the canonical `milestone_ref`
+returned by `create_milestone` rather than relying on party-local aliases for
+arbitrary user-supplied IDs.
 
 When creating the milestone, the sponsor chooses one exact evidence hostname.
 It is normalized to lowercase and strips one or more trailing dots; schemes,
