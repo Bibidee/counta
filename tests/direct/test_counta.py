@@ -80,6 +80,8 @@ def test_funded_milestone_persists_ledger_and_terms(direct_vm, direct_deploy, di
     assert saved["beneficiary"].lower() == ("0x" + direct_bob.hex()).lower()
     assert int(saved["deposited"]) == SPONSOR_AMOUNT
     assert saved["brief"] == "Complete and verify the Counta C-001 text deliverable."
+    assert int(saved["sponsor_next_review_at"]) == 0
+    assert int(saved["beneficiary_next_review_at"]) == 0
 
 
 def test_creation_rejects_insufficient_value_duplicate_id_and_self_beneficiary(direct_vm, direct_deploy, direct_alice, direct_bob):
@@ -517,7 +519,8 @@ def test_sponsor_three_infrastructure_failures_do_not_lock_out_beneficiary(direc
         assert int(saved["semantic_attempts"]) == 0
         assert int(saved["deposited"]) == SPONSOR_AMOUNT
         attempt_epoch = int(datetime.fromisoformat(timestamp.replace("Z", "+00:00")).timestamp())
-        assert int(saved["next_review_at"]) == attempt_epoch + 900
+        assert int(saved["sponsor_next_review_at"]) == attempt_epoch + 900
+        assert int(saved["beneficiary_next_review_at"]) == 0
     with direct_vm.expect_revert():
         contract.review("C-001")  # cooldown, not a permanent infrastructure lockout
     with direct_vm.expect_revert():
@@ -558,7 +561,7 @@ def test_hash_mismatch_blocks_and_refunds(direct_vm, direct_deploy, direct_alice
     assert int(contract.get_milestone("C-001")["sponsor_dispatched_amount"]) == SPONSOR_AMOUNT
 
 
-def test_evidence_hash_mismatch_blocks(direct_vm, direct_deploy, direct_alice, direct_bob):
+def test_evidence_hash_mismatch_is_retryable_not_terminal(direct_vm, direct_deploy, direct_alice, direct_bob):
     contract = new_contract(direct_vm, direct_deploy)
     fund(contract, direct_vm, direct_alice, direct_bob)
     submit_text(contract, direct_vm, direct_bob)
@@ -566,7 +569,11 @@ def test_evidence_hash_mismatch_blocks(direct_vm, direct_deploy, direct_alice, d
     direct_vm.mock_web("https://evidence.example/c001.txt", {"status": 200, "body": b"changed evidence"})
     contract.review("C-001")
     saved = contract.get_milestone("C-001")
-    assert saved["status"] == "blocked" and saved["last_reason"] == "hash_mismatch"
+    assert saved["status"] == "retryable" and saved["last_reason"] == "evidence_unavailable"
+    assert int(saved["semantic_attempts"]) == 0
+    assert int(saved["deposited"]) == SPONSOR_AMOUNT
+    with direct_vm.expect_revert():
+        contract.settle("C-001")
 
 
 def test_empty_artifact_and_non_success_http_fail_closed(direct_vm, direct_deploy, direct_alice, direct_bob):
@@ -581,7 +588,7 @@ def test_empty_artifact_and_non_success_http_fail_closed(direct_vm, direct_deplo
     assert int(saved["deposited"]) == SPONSOR_AMOUNT
 
 
-def test_http_404_and_invalid_utf8_evidence_fail_closed(direct_vm, direct_deploy, direct_alice, direct_bob):
+def test_http_404_and_invalid_utf8_evidence_are_retryable(direct_vm, direct_deploy, direct_alice, direct_bob):
     contract = new_contract(direct_vm, direct_deploy)
     fund(contract, direct_vm, direct_alice, direct_bob)
     submit_text(contract, direct_vm, direct_bob)
@@ -589,8 +596,11 @@ def test_http_404_and_invalid_utf8_evidence_fail_closed(direct_vm, direct_deploy
     direct_vm.mock_web("https://evidence.example/c001.txt", {"status": 404, "body": b"missing"})
     contract.review("C-001")
     saved = contract.get_milestone("C-001")
-    assert saved["status"] == "blocked"
-    assert saved["last_reason"] == "http_response_error"
+    assert saved["status"] == "retryable"
+    assert saved["last_reason"] == "evidence_unavailable"
+    assert int(saved["semantic_attempts"]) == 0
+    with direct_vm.expect_revert():
+        contract.settle("C-001")
 
     direct_vm.clear_mocks()
     fund(contract, direct_vm, direct_alice, direct_bob, "C-UTF8-EVIDENCE")
@@ -600,8 +610,9 @@ def test_http_404_and_invalid_utf8_evidence_fail_closed(direct_vm, direct_deploy
     direct_vm.mock_web("https://evidence.example/c001.txt", {"status": 200, "body": b"\xff"})
     contract.review("C-UTF8-EVIDENCE")
     saved = contract.get_milestone("C-UTF8-EVIDENCE")
-    assert saved["status"] == "blocked"
-    assert saved["last_reason"] == "invalid_evidence_utf8"
+    assert saved["status"] == "retryable"
+    assert saved["last_reason"] == "evidence_unavailable"
+    assert int(saved["semantic_attempts"]) == 0
 
 
 def test_invalid_utf8_deliverable_blocks_and_refunds(direct_vm, direct_deploy, direct_alice, direct_bob):
@@ -799,11 +810,13 @@ def test_invalid_sponsor_evidence_authority_rejected_at_creation(
 def test_invariant_info_and_read_unknown(direct_vm, direct_deploy):
     contract = new_contract(direct_vm, direct_deploy)
     info = contract.get_info()
-    assert info["name"] == "Counta" and info["version"] == "0.3.2"
+    assert info["name"] == "Counta" and info["version"] == "0.3.3"
     assert info["semantic_attempt_telemetry_cap"] == "1000"
     assert info["evidence_authority_model"] == "sponsor_fixed_exact_hostname"
     assert info["infrastructure_attempt_telemetry_cap"] == "3"
     assert info["infrastructure_failure_policy"] == "retry_after_cooldown_until_review_deadline"
+    assert info["review_cooldown_model"] == "party_specific"
+    assert info["evidence_failure_policy"] == "retry_until_deadline"
     with direct_vm.expect_revert():
         contract.get_milestone("missing")
 

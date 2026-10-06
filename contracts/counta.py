@@ -1,4 +1,4 @@
-# v0.3.2
+# v0.3.3
 # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
 """Counta: hash-bound milestone review with deterministic GEN escrow dispatch.
 
@@ -76,7 +76,8 @@ class Milestone:
     status: str
     semantic_attempts: u256
     infrastructure_attempts: u256
-    next_review_at: u256
+    sponsor_next_review_at: u256
+    beneficiary_next_review_at: u256
     confidence: u256
     rationale: str
     last_reason: str
@@ -247,6 +248,12 @@ def _fetch(url: str, expected_hash: str, max_bytes: int) -> bytes:
         raise ValueError("invalid_http_response")
     if status < 100 or status > 599:
         raise ValueError("invalid_http_response")
+    if status < 200:
+        raise ValueError("invalid_http_response")
+    # A surfaced redirect is still a retrieval failure: this API does not
+    # provide a supported final-URL/redirect-chain control for safe attribution.
+    if 300 <= status < 400:
+        raise ValueError("fetch_unavailable")
     if status in (403, 408, 429) or status >= 500:
         raise ValueError("fetch_unavailable")
     if status < 200 or status >= 300:
@@ -260,6 +267,27 @@ def _fetch(url: str, expected_hash: str, max_bytes: int) -> bytes:
     if digest != expected_hash:
         raise ValueError("hash_mismatch")
     return raw
+
+
+def _fetch_deliverable(url: str, expected_hash: str, max_bytes: int) -> bytes:
+    """Fetch a beneficiary-committed artifact; deterministic defects block."""
+    return _fetch(url, expected_hash, max_bytes)
+
+
+def _fetch_evidence(url: str, expected_hash: str, max_bytes: int) -> str:
+    """Fetch sponsor-authority evidence; source failures never block early."""
+    try:
+        raw = _fetch(url, expected_hash, max_bytes)
+        text = raw.decode("utf-8")
+        if not _clean(text):
+            raise ValueError("empty_artifact")
+        return text
+    except Exception:
+        # The sponsor chooses the evidence hostname. Unavailability, changed
+        # bytes, invalid encoding, or invalid bounded content therefore remain
+        # retryable until the fixed deadline rather than enabling an early
+        # sponsor refund.
+        raise ValueError("evidence_unavailable")
 
 
 def _canonical_output(raw):
@@ -401,15 +429,11 @@ def _prompt(snapshot: dict, evidence: str, deliverable_text: str) -> str:
 
 def _observe(snapshot: dict) -> dict:
     try:
-        deliverable = _fetch(
+        deliverable = _fetch_deliverable(
             snapshot["deliverable_url"], snapshot["deliverable_hash"],
             MAX_IMAGE_BYTES if snapshot["artifact_kind"] == "image" else MAX_TEXT_BYTES,
         )
-        evidence_raw = _fetch(snapshot["evidence_url"], snapshot["evidence_hash"], MAX_TEXT_BYTES)
-        try:
-            evidence = evidence_raw.decode("utf-8")
-        except UnicodeDecodeError:
-            raise ValueError("invalid_evidence_utf8")
+        evidence = _fetch_evidence(snapshot["evidence_url"], snapshot["evidence_hash"], MAX_TEXT_BYTES)
         images = []
         if snapshot["artifact_kind"] == "text":
             try:
@@ -427,8 +451,6 @@ def _observe(snapshot: dict) -> dict:
             images.append(deliverable)
         else:
             raise ValueError("unsupported_artifact_kind")
-        if not _clean(evidence):
-            raise ValueError("empty_artifact")
         snapshot["evidence_host"] = (urlsplit(snapshot["evidence_url"]).hostname or "").lower().rstrip(".")
         snapshot["deliverable_host"] = (urlsplit(snapshot["deliverable_url"]).hostname or "").lower().rstrip(".")
         prompt = _prompt(snapshot, evidence, deliverable_text)
@@ -452,7 +474,7 @@ def _observe(snapshot: dict) -> dict:
             "invalid_deliverable_utf8", "unsupported_image_format", "unsupported_artifact_kind",
         ):
             return {"kind": "integrity_failure", "class": reason}
-        if reason in ("fetch_unavailable", "invalid_http_response"):
+        if reason in ("fetch_unavailable", "invalid_http_response", "evidence_unavailable"):
             return {"kind": "error", "class": reason}
         return {"kind": "error", "class": "observation_failure"}
     except Exception:
@@ -539,7 +561,8 @@ class Counta(gl.Contract):
             deposited=amount,
             semantic_attempts=u256(0),
             infrastructure_attempts=u256(0),
-            next_review_at=u256(0),
+            sponsor_next_review_at=u256(0),
+            beneficiary_next_review_at=u256(0),
             dispatched_amount=u256(0),
             sponsor_dispatched_amount=u256(0),
             beneficiary_dispatched_amount=u256(0),
@@ -605,7 +628,12 @@ class Counta(gl.Contract):
         sender = gl.message.sender_address
         if sender != milestone.sponsor and sender != milestone.beneficiary:
             raise gl.vm.UserError(f"{EXPECTED} Only milestone parties may trigger review")
-        if now < int(milestone.next_review_at):
+        is_sponsor = sender == milestone.sponsor
+        caller_next_review_at = (
+            milestone.sponsor_next_review_at
+            if is_sponsor else milestone.beneficiary_next_review_at
+        )
+        if now < int(caller_next_review_at):
             raise gl.vm.UserError(f"{EXPECTED} Review retry cooldown is active")
         semantic_attempts = int(milestone.semantic_attempts)
         infrastructure_attempts = int(milestone.infrastructure_attempts)
@@ -635,7 +663,10 @@ class Counta(gl.Contract):
 
         result = gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
         if not isinstance(result, dict):
-            self._record_infrastructure_failure(milestone, infrastructure_attempts, now, "invalid_consensus_result")
+            self._record_infrastructure_failure(
+                milestone, infrastructure_attempts, now,
+                "invalid_consensus_result", is_sponsor,
+            )
             return
         if result.get("kind") == "analysis" and _valid_analysis(result.get("analysis")):
             analysis = result["analysis"]
@@ -658,16 +689,28 @@ class Counta(gl.Contract):
                 # fixed deadline; only expire() can refund unresolved escrow.
                 milestone.status = RETRYABLE
                 milestone.last_reason = "uncertain_or_low_confidence"
-                milestone.next_review_at = u256(now + REVIEW_RETRY_COOLDOWN)
+                self._set_party_review_cooldown(milestone, is_sponsor, now)
             return
         if result.get("kind") == "integrity_failure":
             milestone.status = BLOCKED
             milestone.last_reason = str(result.get("class", "integrity_failure"))[:64]
             return
         reason = str(result.get("class", "observation_failure"))[:64]
-        self._record_infrastructure_failure(milestone, infrastructure_attempts, now, reason)
+        self._record_infrastructure_failure(
+            milestone, infrastructure_attempts, now, reason, is_sponsor,
+        )
 
-    def _record_infrastructure_failure(self, milestone: Milestone, attempts: int, now: int, reason: str) -> None:
+    def _set_party_review_cooldown(self, milestone: Milestone, is_sponsor: bool, now: int) -> None:
+        next_review_at = u256(now + REVIEW_RETRY_COOLDOWN)
+        if is_sponsor:
+            milestone.sponsor_next_review_at = next_review_at
+        else:
+            milestone.beneficiary_next_review_at = next_review_at
+
+    def _record_infrastructure_failure(
+        self, milestone: Milestone, attempts: int, now: int,
+        reason: str, is_sponsor: bool,
+    ) -> None:
         # Keep bounded telemetry only. This count never limits an otherwise
         # timely review; outage failures cannot consume the beneficiary's
         # opportunity for adjudication after the provider recovers.
@@ -678,7 +721,7 @@ class Counta(gl.Contract):
         # failure applies the same cooldown and remains retryable until the
         # fixed review deadline; only expire() can refund unresolved work then.
         milestone.status = RETRYABLE
-        milestone.next_review_at = u256(now + REVIEW_RETRY_COOLDOWN)
+        self._set_party_review_cooldown(milestone, is_sponsor, now)
 
     @gl.public.write
     def settle(self, milestone_id: str) -> None:
@@ -776,7 +819,8 @@ class Counta(gl.Contract):
             "deposited": str(milestone.deposited),
             "semantic_attempts": str(milestone.semantic_attempts),
             "infrastructure_attempts": str(milestone.infrastructure_attempts),
-            "next_review_at": str(milestone.next_review_at),
+            "sponsor_next_review_at": str(milestone.sponsor_next_review_at),
+            "beneficiary_next_review_at": str(milestone.beneficiary_next_review_at),
             "dispatched_amount": str(milestone.dispatched_amount),
             "sponsor_dispatched_amount": str(milestone.sponsor_dispatched_amount),
             "beneficiary_dispatched_amount": str(milestone.beneficiary_dispatched_amount),
@@ -788,16 +832,18 @@ class Counta(gl.Contract):
     def get_info(self) -> dict:
         return {
             "name": "Counta",
-            "version": "0.3.2",
+            "version": "0.3.3",
             "min_confidence": str(MIN_CONFIDENCE),
             "max_text_artifact_bytes": str(MAX_TEXT_BYTES),
             "max_image_artifact_bytes": str(MAX_IMAGE_BYTES),
             "semantic_attempt_telemetry_cap": str(SEMANTIC_ATTEMPT_TELEMETRY_CAP),
             "infrastructure_attempt_telemetry_cap": str(INFRASTRUCTURE_TELEMETRY_CAP),
             "review_retry_cooldown_seconds": str(REVIEW_RETRY_COOLDOWN),
+            "review_cooldown_model": "party_specific",
             "min_deposit": str(MIN_DEPOSIT),
             "milestone_capacity": "unbounded_by_contract",
             "identity_model": "sponsor_scoped_composite_reference",
             "evidence_authority_model": "sponsor_fixed_exact_hostname",
             "infrastructure_failure_policy": "retry_after_cooldown_until_review_deadline",
+            "evidence_failure_policy": "retry_until_deadline",
         }
