@@ -1,0 +1,1 @@
+Counta v0.3.3 recovery fixture: the committed release note is supported by two implementation facts: sponsor-selected evidence-source failures remain retryable until review_deadline, and sponsor and beneficiary have independent cooldown timestamps.
