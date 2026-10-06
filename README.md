@@ -24,26 +24,32 @@ and agree on the authorization outcome. No one model's rationale authorizes
 payment. This still cannot eliminate model fallibility, provider outages,
 validator disagreement, or protocol-level `UNDETERMINED` outcomes.
 
-## v0.3.1 policy
+## v0.3.2 hardening (source candidate)
 
 - Sponsor-fixed evidence authority: creation commits one normalized DNS
   hostname. Beneficiaries may submit evidence only from that exact hostname;
   no wildcards or subdomain matching are used.
-- Sponsor-scoped milestone identity: the local ID is unique per sponsor. The
+- Sponsor-scoped milestone identity: local IDs use only ASCII letters, digits,
+  underscore, dot, and hyphen after an alphanumeric first character; colon is
+  forbidden so a local ID cannot impersonate a canonical reference. The
   returned canonical reference is `0x<sponsor-address>:<local-id>`. Party-local
   convenience lookup is sponsor-side at creation and beneficiary-side only
   after acceptance; use the canonical reference for first acceptance and shared
   IDs. Colliding aliases are ambiguous, but canonical references remain unique.
 - Strict payment rule: affirmative approval dispatches 100% of the escrow to
-  the beneficiary. Semantic rejection, deterministic artifact-integrity failure,
-  and exhausted semantic uncertainty dispatch 100% to the sponsor. No split or
-  Counta-level inconclusive state exists.
-- Infrastructure failures—including 408, 429, 5xx, network/LLM errors, malformed
-  model output, and failed consensus returns—never approve and never make funds
-  immediately refundable. Each failure sets the ordinary retry cooldown; the
-  infrastructure counter is telemetry capped at three and never blocks another
-  review. Either party may retry after cooldown until the fixed review deadline,
-  when permissionless `expire()` refunds unresolved funds to the sponsor.
+  the beneficiary. Explicit semantic rejection or deterministic artifact
+  integrity failure dispatches 100% to the sponsor. Semantic uncertainty never
+  becomes a terminal result merely because it repeats; unresolved work becomes
+  refundable only at the fixed review deadline through permissionless `expire()`.
+  No split or Counta-level inconclusive state exists.
+- Semantic uncertainty and infrastructure failures are both non-authorizing,
+  retryable after the same cooldown, and cannot be used by either party to
+  exhaust a shared terminal retry budget. The semantic counter is capped
+  telemetry only. HTTP 403, 408, 429, 5xx, network/LLM errors, malformed model
+  output, and failed consensus returns never approve or make funds immediately
+  refundable. HTTP 404/410 and other non-special non-2xx responses remain
+  deterministic artifact failures and block; unresolved retryable work expires
+  only at the fixed review deadline.
 - Prompt inputs are one canonical JSON data block. Brief, summary, evidence,
   URLs, text deliverable, and visible image words are all untrusted content, not
   reviewer instructions. Image evidence is raw PNG/JPEG input; the evaluator is
@@ -69,20 +75,24 @@ validator disagreement, or protocol-level `UNDETERMINED` outcomes.
 3. That beneficiary submits exactly once, before `deliver_by`, with a committed
    text/image URL and hash, evidence URL and hash, and bounded summary. The
    evidence hostname must exactly equal the sponsor's creation-time policy.
-4. Sponsor or beneficiary can trigger review. Retry cooldown and semantic and
-   infrastructure attempt counters are deterministic and independent.
+4. Sponsor or beneficiary can trigger review. Retry cooldown is deterministic;
+   semantic and infrastructure counters are bounded telemetry, not shared
+   authorization or refund budgets.
 5. An affirmative consensus result allows permissionless one-time settlement
-   to dispatch the entire ledger to the beneficiary. A semantic/integrity block
-   permits full sponsor refund. Infrastructure failures remain retryable after
-   cooldown until fixed-deadline expiry refunds unresolved funds.
+   to dispatch the entire ledger to the beneficiary. Explicit semantic or
+   integrity rejection permits a full sponsor refund. Uncertainty and
+   infrastructure failures remain retryable after cooldown until
+   fixed-deadline expiry refunds unresolved funds.
 
 ## Trust and platform boundaries
 
 - HTTPS syntax checks reject credentials, fragments, unsupported ports, local
   names, every IP literal (including public and CGNAT ranges), and single-label
-  DNS names. Static checks cannot guarantee DNS answers or redirect behavior;
-  GenLayer's web response does not expose a redirect chain/final URL or a
-  redirect-disable control.
+  DNS names. The submitted evidence URL's lexical hostname must exactly match
+  the sponsor-approved hostname. The documented GenLayer web response exposes
+  response status/body but no redirect chain/final URL or redirect-disable
+  option; Counta therefore cannot prove the final redirect origin or prevent
+  DNS rebinding through lexical checks alone.
 - A hostname selected by a sponsor expresses the sponsor's evidence-authority
   policy, not proof of independent authorship. Distinct hostnames/CDNs are not
   proof of independent sources.

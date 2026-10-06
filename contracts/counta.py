@@ -1,4 +1,4 @@
-# v0.3.1
+# v0.3.2
 # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
 """Counta: hash-bound milestone review with deterministic GEN escrow dispatch.
 
@@ -48,7 +48,7 @@ MAX_DELIVERY_WINDOW = 180 * 24 * 60 * 60
 MIN_REVIEW_WINDOW = 60 * 60
 MAX_REVIEW_WINDOW = 30 * 24 * 60 * 60
 MIN_CONFIDENCE = 75
-MAX_REVIEW_ATTEMPTS = 3
+SEMANTIC_ATTEMPT_TELEMETRY_CAP = 1000
 INFRASTRUCTURE_TELEMETRY_CAP = 3
 REVIEW_RETRY_COOLDOWN = 15 * 60
 EXPECTED = "[EXPECTED]"
@@ -117,7 +117,7 @@ def _bounded(value, label: str, limit: int) -> str:
 
 def _identifier(value: str) -> str:
     result = str(value).strip()
-    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,95}", result):
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,95}", result):
         raise gl.vm.UserError(f"{EXPECTED} Invalid milestone id")
     return result
 
@@ -128,7 +128,7 @@ def _public_ref(sponsor: Address, local_id: str) -> str:
 
 def _validate_ref(value: str) -> str:
     result = str(value).strip()
-    if not re.fullmatch(r"0x[0-9a-fA-F]{40}:[A-Za-z0-9][A-Za-z0-9_.:-]{0,95}", result):
+    if not re.fullmatch(r"0x[0-9a-fA-F]{40}:[A-Za-z0-9][A-Za-z0-9_.-]{0,95}", result):
         raise gl.vm.UserError(f"{EXPECTED} Invalid sponsor-scoped milestone reference")
     address, local_id = result.split(":", 1)
     return address.lower() + ":" + _identifier(local_id)
@@ -240,14 +240,14 @@ def _fetch(url: str, expected_hash: str, max_bytes: int) -> bytes:
         raw_status = getattr(response, "status", None)
         if raw_status is None:
             raw_status = getattr(response, "status_code", None)
-        if raw_status is None:
+        if not isinstance(raw_status, int) or isinstance(raw_status, bool):
             raise ValueError("invalid_http_response")
-        status = int(raw_status)
+        status = raw_status
     except Exception:
         raise ValueError("invalid_http_response")
-    if status <= 0:
+    if status < 100 or status > 599:
         raise ValueError("invalid_http_response")
-    if status in (408, 429) or status >= 500:
+    if status in (403, 408, 429) or status >= 500:
         raise ValueError("fetch_unavailable")
     if status < 200 or status >= 300:
         raise ValueError("http_response_error")
@@ -468,7 +468,7 @@ class Counta(gl.Contract):
 
     def _get(self, milestone_id: str) -> Milestone:
         raw = str(milestone_id).strip()
-        if re.fullmatch(r"0x[0-9a-fA-F]{40}:[A-Za-z0-9][A-Za-z0-9_.:-]{0,95}", raw):
+        if re.fullmatch(r"0x[0-9a-fA-F]{40}:[A-Za-z0-9][A-Za-z0-9_.-]{0,95}", raw):
             key = _validate_ref(raw)
         else:
             local_id = _identifier(raw)
@@ -609,8 +609,6 @@ class Counta(gl.Contract):
             raise gl.vm.UserError(f"{EXPECTED} Review retry cooldown is active")
         semantic_attempts = int(milestone.semantic_attempts)
         infrastructure_attempts = int(milestone.infrastructure_attempts)
-        if semantic_attempts >= MAX_REVIEW_ATTEMPTS:
-            raise gl.vm.UserError(f"{EXPECTED} Semantic review attempts exhausted")
         # Copy storage-backed fields before entering nondeterministic execution.
         snapshot = {
             "brief": str(milestone.brief),
@@ -651,15 +649,16 @@ class Counta(gl.Contract):
                 milestone.status = BLOCKED
                 milestone.last_reason = "semantic_rejection"
             else:
-                semantic_attempts += 1
+                semantic_attempts = min(
+                    semantic_attempts + 1, SEMANTIC_ATTEMPT_TELEMETRY_CAP
+                )
                 milestone.semantic_attempts = u256(semantic_attempts)
-                if semantic_attempts < MAX_REVIEW_ATTEMPTS:
-                    milestone.status = RETRYABLE
-                    milestone.last_reason = "uncertain_or_low_confidence"
-                    milestone.next_review_at = u256(now + REVIEW_RETRY_COOLDOWN)
-                else:
-                    milestone.status = BLOCKED
-                    milestone.last_reason = "semantic_uncertainty_sponsor_refund"
+                # Uncertainty is never an adjudication and never makes escrow
+                # settleable. Either party may retry after cooldown until the
+                # fixed deadline; only expire() can refund unresolved escrow.
+                milestone.status = RETRYABLE
+                milestone.last_reason = "uncertain_or_low_confidence"
+                milestone.next_review_at = u256(now + REVIEW_RETRY_COOLDOWN)
             return
         if result.get("kind") == "integrity_failure":
             milestone.status = BLOCKED
@@ -789,11 +788,11 @@ class Counta(gl.Contract):
     def get_info(self) -> dict:
         return {
             "name": "Counta",
-            "version": "0.3.1",
+            "version": "0.3.2",
             "min_confidence": str(MIN_CONFIDENCE),
             "max_text_artifact_bytes": str(MAX_TEXT_BYTES),
             "max_image_artifact_bytes": str(MAX_IMAGE_BYTES),
-            "max_review_attempts": str(MAX_REVIEW_ATTEMPTS),
+            "semantic_attempt_telemetry_cap": str(SEMANTIC_ATTEMPT_TELEMETRY_CAP),
             "infrastructure_attempt_telemetry_cap": str(INFRASTRUCTURE_TELEMETRY_CAP),
             "review_retry_cooldown_seconds": str(REVIEW_RETRY_COOLDOWN),
             "min_deposit": str(MIN_DEPOSIT),

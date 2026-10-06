@@ -9,8 +9,9 @@ import tempfile
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_VERSION = "0.3.1"
-EXPECTED_CONTRACT_SHA256 = "9b98e0016a38e7c4ad8e613370b0667e7c4b37910e4dbaf26e99a6a1688be005"
+EXPECTED_VERSION = "0.3.2"
+EXPECTED_CONTRACT_SHA256 = "ae899a586ee77a316870a800aa8c4baf9c12d7f8267320d14691327dc551f1ac"
+EXPECTED_SOURCE_BYTES = 36598
 CONTRACTS = ROOT / "contracts"
 SOURCES = sorted(CONTRACTS.glob("*.py"))
 if len(SOURCES) != 1 or SOURCES[0].name != "counta.py":
@@ -30,6 +31,11 @@ if contract_sha256 != EXPECTED_CONTRACT_SHA256:
     raise SystemExit(
         "frozen contract source hash mismatch: "
         f"expected {EXPECTED_CONTRACT_SHA256}, got {contract_sha256}"
+    )
+if len(raw) != EXPECTED_SOURCE_BYTES:
+    raise SystemExit(
+        "frozen contract source length mismatch: "
+        f"expected {EXPECTED_SOURCE_BYTES}, got {len(raw)}"
     )
 subprocess.run([sys.executable, "-m", "compileall", "-q", "contracts", "tests"], cwd=ROOT, check=True)
 

@@ -304,7 +304,7 @@ def test_confidence_boundary_is_deterministic(direct_vm, direct_deploy, direct_a
     assert contract.get_milestone("C-001")["status"] == expected
 
 
-def test_three_semantic_uncertainties_block_and_refund_sponsor(direct_vm, direct_deploy, direct_alice, direct_bob):
+def test_three_semantic_uncertainties_remain_retryable_until_review_deadline(direct_vm, direct_deploy, direct_alice, direct_bob):
     contract = new_contract(direct_vm, direct_deploy)
     fund(contract, direct_vm, direct_alice, direct_bob)
     submit_text(contract, direct_vm, direct_bob)
@@ -327,16 +327,141 @@ def test_three_semantic_uncertainties_block_and_refund_sponsor(direct_vm, direct
     direct_vm.warp("2026-10-01T12:30:00Z")
     contract.review("C-001")
     saved = contract.get_milestone("C-001")
-    assert saved["status"] == "blocked"
-    assert saved["last_reason"] == "semantic_uncertainty_sponsor_refund"
-    contract.settle("C-001")
+    assert saved["status"] == "retryable"
+    assert saved["last_reason"] == "uncertain_or_low_confidence"
+    with direct_vm.expect_revert():
+        contract.settle("C-001")
+    with direct_vm.expect_revert():
+        contract.expire("C-001")
+    assert int(saved["semantic_attempts"]) == 3
+    assert int(saved["deposited"]) == SPONSOR_AMOUNT
+
+    direct_vm.warp("2026-10-01T18:00:00Z")
+    contract.expire("C-001")
     saved = contract.get_milestone("C-001")
     assert saved["status"] == "refund_dispatched"
-    assert saved["settlement"] == "sponsor_refund_dispatched"
+    assert saved["settlement"] == "deadline_refund_dispatched"
     assert int(saved["sponsor_dispatched_amount"]) == SPONSOR_AMOUNT
     assert int(saved["beneficiary_dispatched_amount"]) == 0
     assert int(saved["dispatched_amount"]) == SPONSOR_AMOUNT
     assert int(saved["dispatched_amount"]) <= SPONSOR_AMOUNT
+
+
+@pytest.mark.parametrize("status", [403, 408, 429, 500, 503])
+def test_transient_http_status_is_retryable_and_never_early_settleable(
+    direct_vm, direct_deploy, direct_alice, direct_bob, status
+):
+    contract = new_contract(direct_vm, direct_deploy)
+    fund(contract, direct_vm, direct_alice, direct_bob)
+    submit_text(contract, direct_vm, direct_bob)
+    direct_vm.sender = direct_alice
+    direct_vm.mock_web("https://deliverable.example/c001.txt", {"status": status, "body": b""})
+    contract.review("C-001")
+    saved = contract.get_milestone("C-001")
+    assert saved["status"] == "retryable"
+    assert int(saved["deposited"]) == SPONSOR_AMOUNT
+    assert int(saved["semantic_attempts"]) == 0
+    assert int(saved["infrastructure_attempts"]) == 1
+    with direct_vm.expect_revert():
+        contract.settle("C-001")
+    with direct_vm.expect_revert():
+        contract.expire("C-001")
+
+
+def test_403_repeated_until_deadline_never_blocks_or_increments_semantics(
+    direct_vm, direct_deploy, direct_alice, direct_bob
+):
+    contract = new_contract(direct_vm, direct_deploy)
+    fund(contract, direct_vm, direct_alice, direct_bob)
+    submit_text(contract, direct_vm, direct_bob)
+    direct_vm.sender = direct_alice
+    for index in range(4):
+        if index:
+            direct_vm.warp(f"2026-10-01T{12 + index:02d}:15:00Z")
+        direct_vm.mock_web("https://deliverable.example/c001.txt", {"status": 403, "body": b"denied"})
+        contract.review("C-001")
+        saved = contract.get_milestone("C-001")
+        assert saved["status"] == "retryable"
+        assert saved["last_reason"] == "fetch_unavailable"
+        assert int(saved["semantic_attempts"]) == 0
+        assert int(saved["deposited"]) == SPONSOR_AMOUNT
+        with direct_vm.expect_revert():
+            contract.settle("C-001")
+    direct_vm.warp("2026-10-01T18:00:00Z")
+    contract.expire("C-001")
+    saved = contract.get_milestone("C-001")
+    assert saved["status"] == "refund_dispatched"
+    assert int(saved["sponsor_dispatched_amount"]) == SPONSOR_AMOUNT
+
+
+def test_403_recovers_after_cooldown_and_later_approval_succeeds(
+    direct_vm, direct_deploy, direct_alice, direct_bob
+):
+    contract = new_contract(direct_vm, direct_deploy)
+    fund(contract, direct_vm, direct_alice, direct_bob)
+    submit_text(contract, direct_vm, direct_bob)
+    direct_vm.sender = direct_alice
+    direct_vm.mock_web("https://deliverable.example/c001.txt", {"status": 403, "body": b"denied"})
+    contract.review("C-001")
+    assert contract.get_milestone("C-001")["status"] == "retryable"
+    direct_vm.warp("2026-10-01T12:15:00Z")
+    direct_vm.clear_mocks()
+    configure_review(direct_vm, analysis={
+        "deliverable_match": "yes", "evidence_support": "yes", "risk": "no",
+        "confidence": 90, "rationale": "The committed work meets the brief and the evidence supports it.",
+    })
+    contract.review("C-001")
+    saved = contract.get_milestone("C-001")
+    assert saved["status"] == "approved"
+    assert int(saved["deposited"]) == SPONSOR_AMOUNT
+
+
+@pytest.mark.parametrize("status", [404, 410])
+def test_permanent_missing_artifact_http_status_remains_integrity_block(
+    direct_vm, direct_deploy, direct_alice, direct_bob, status
+):
+    contract = new_contract(direct_vm, direct_deploy)
+    fund(contract, direct_vm, direct_alice, direct_bob)
+    submit_text(contract, direct_vm, direct_bob)
+    direct_vm.sender = direct_alice
+    direct_vm.mock_web("https://deliverable.example/c001.txt", {"status": status, "body": b"missing"})
+    contract.review("C-001")
+    saved = contract.get_milestone("C-001")
+    assert saved["status"] == "blocked"
+    assert saved["last_reason"] == "http_response_error"
+    assert int(saved["semantic_attempts"]) == 0
+
+
+@pytest.mark.parametrize("status", [99, 600, "not-a-status", 200.5, True])
+def test_invalid_http_status_metadata_is_retryable(
+    direct_vm, direct_deploy, direct_alice, direct_bob, status
+):
+    contract = new_contract(direct_vm, direct_deploy)
+    fund(contract, direct_vm, direct_alice, direct_bob)
+    submit_text(contract, direct_vm, direct_bob)
+    direct_vm.sender = direct_alice
+    direct_vm.mock_web("https://deliverable.example/c001.txt", {"status": status, "body": b""})
+    contract.review("C-001")
+    saved = contract.get_milestone("C-001")
+    assert saved["status"] == "retryable"
+    assert saved["last_reason"] == "invalid_http_response"
+    assert int(saved["semantic_attempts"]) == 0
+
+
+@pytest.mark.parametrize("status", [400, 401, 422])
+def test_other_client_http_errors_remain_deterministic_content_failures(
+    direct_vm, direct_deploy, direct_alice, direct_bob, status
+):
+    contract = new_contract(direct_vm, direct_deploy)
+    fund(contract, direct_vm, direct_alice, direct_bob)
+    submit_text(contract, direct_vm, direct_bob)
+    direct_vm.sender = direct_alice
+    direct_vm.mock_web("https://deliverable.example/c001.txt", {"status": status, "body": b"error"})
+    contract.review("C-001")
+    saved = contract.get_milestone("C-001")
+    assert saved["status"] == "blocked"
+    assert saved["last_reason"] == "http_response_error"
+    assert int(saved["semantic_attempts"]) == 0
 
 
 def test_fetch_unavailable_is_retryable_and_never_approves(direct_vm, direct_deploy, direct_alice, direct_bob):
@@ -674,8 +799,8 @@ def test_invalid_sponsor_evidence_authority_rejected_at_creation(
 def test_invariant_info_and_read_unknown(direct_vm, direct_deploy):
     contract = new_contract(direct_vm, direct_deploy)
     info = contract.get_info()
-    assert info["name"] == "Counta" and info["version"] == "0.3.1"
-    assert info["max_review_attempts"] == "3"
+    assert info["name"] == "Counta" and info["version"] == "0.3.2"
+    assert info["semantic_attempt_telemetry_cap"] == "1000"
     assert info["evidence_authority_model"] == "sponsor_fixed_exact_hostname"
     assert info["infrastructure_attempt_telemetry_cap"] == "3"
     assert info["infrastructure_failure_policy"] == "retry_after_cooldown_until_review_deadline"
