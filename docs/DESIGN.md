@@ -1,4 +1,4 @@
-# Counta protocol design (v0.3.2, current deployed release)
+# Counta protocol design (v0.3.3, current deployed release)
 
 Counta holds sponsor-provided GEN against one fixed milestone. The sponsor
 commits the parties, brief, delivery deadline, review window and exact allowed
@@ -6,26 +6,33 @@ evidence hostname before beneficiary acceptance. A single hash-bound submission
 is independently fetched and semantically assessed through GenLayer. Only
 deterministic state logic releases funds.
 
-v0.3.2 is deployed to GenLayer Studionet (chain ID 61999) at
-`0x5E7D5C3039713b50aD46d09C3c1ad0c7194ce07e`. Deployment transaction:
-`0xca44755d4d4166f238d3a5243e66c721d5870c3f2180b294a21b42d905fe0c12`;
+v0.3.3 is deployed to GenLayer Studionet (chain ID 61999) at
+`0xC3402F827Ba8E6ee706A8290B4a47d2b447285B2`. Deployment transaction:
+`0x5627121e05f5e0ccfed6071b978049dd2b215023dafbbef91894fce1ed5b15a7`;
 deployment finalized with MAJORITY_AGREE and GenVM SUCCESS. Frozen source
-commit: `e546d8b83c67adb67fd0780961e1159822b14980`; SHA-256:
-`ae899a586ee77a316870a800aa8c4baf9c12d7f8267320d14691327dc551f1ac`; Git
-blob: `4946d1481f93f3e8fb93710f50167e3d034e2b7e`; source length: 36,598 bytes.
-Deployed code retrieved through the official GenLayer CLI was byte-for-byte
-equal to the frozen local source. The v0.3.2 release gate passed 105 tests
-with no skips or failures; frozen-source CI, lint, ABI/schema, and preflight
-passed. `get_info()` and exact live transaction evidence are in
+commit and tag: `7fa406e9f5d712c237d241c6a5daedf04b2b5909` / `v0.3.3`;
+SHA-256 `c1160498a29145ac2806a555ec5121d5e858a16d384ec5184b11f9cb68272ff6`;
+Git blob `85646a19c6171e6503b47151b902917c0b7cf4b1`; source length 38,570
+bytes. The official GenLayer CLI retrieved deployed source and the raw bytes
+matched the frozen source exactly. The release gate passed 132 tests with no
+skips or failures; preflight, GenVM lint, ABI/schema, and exact-source GitHub
+Actions run `37456630767` passed. Full `get_info()` and live receipts are in
 `docs/DEPLOYMENT.md`.
 
-Live evidence on v0.3.2 includes one approved 0.001 GEN milestone paid to the
-designated beneficiary and one explicit semantic rejection refunded to the
-sponsor. Both child receipts are FINALIZED and show `value_credited=true` for
-the exact 0.001 GEN transfer. Repository-owned fixtures and GitHub-generated
-Actions API evidence are not independent human-authored evidence. No live
-403-recovery, deterministic semantic-uncertainty, or three-day deadline-expiry
-sequence is claimed; these behaviors are covered by tests.
+Live v0.3.3 evidence includes an approved 0.001 GEN beneficiary payout, an
+explicit semantic block/refund with credited sponsor transfer, and a genuine
+evidence 404 that remained retryable until the exact committed bytes were
+published; the beneficiary then reviewed during the sponsor's active
+cooldown. Fixtures are repository-owned and do not establish independent
+authorship or real-world truth.
+
+v0.3.2 is historical and superseded at
+`0x5E7D5C3039713b50aD46d09C3c1ad0c7194ce07e`; deployment transaction
+`0xca44755d4d4166f238d3a5243e66c721d5870c3f2180b294a21b42d905fe0c12`;
+source commit `e546d8b83c67adb67fd0780961e1159822b14980`; SHA-256
+`ae899a586ee77a316870a800aa8c4baf9c12d7f8267320d14691327dc551f1ac`;
+36,598 bytes; source parity verified. Its live payout and refund records
+remain in `docs/DEPLOYMENT.md` and are not v0.3.3 evidence.
 
 v0.3.1 is a historical, superseded deployment at
 `0xE4Bb7FC4C217EE867F14d40aFaa1e868693CDcAB`. Its frozen source commit is
@@ -34,7 +41,7 @@ v0.3.1 is a historical, superseded deployment at
 source length: 36,535 bytes. Its source parity was verified byte-for-byte.
 v0.3.0 remains historical and superseded at
 `0x4235915E7ec84596239b2d29B93d1a2A982A1018`; its approval/payout evidence is
-preserved in `docs/DEPLOYMENT.md`. v0.3.2 removes the terminal
+preserved in `docs/DEPLOYMENT.md`. v0.3.2 removed the terminal
 semantic-uncertainty retry budget, classifies HTTP 403 as transient
 infrastructure, and excludes colons from local milestone IDs.
 
@@ -87,7 +94,8 @@ contents are accurate or independently authored.
 | `active` | Beneficiary submits once while `now < deliver_by`; URL policy passes | `submitted` | Artifact/evidence commitments fixed; review deadline starts |
 | `submitted` / `retryable` | Validators agree on exact affirmative approval | `approved` | Funds remain locked until `settle` |
 | `submitted` / `retryable` | Substantive semantic rejection | `blocked` | Full sponsor refund becomes settleable |
-| `submitted` / `retryable` | Deterministic integrity failure | `blocked` | Full sponsor refund becomes settleable |
+| `submitted` / `retryable` | Deterministic deliverable integrity failure | `blocked` | Full sponsor refund becomes settleable |
+| `submitted` / `retryable` | Evidence retrieval, hash, decode, empty, or size failure | `retryable` | Sponsor-selected evidence-source failure cannot create an early refund |
 | `submitted` / `retryable` | Valid analysis is semantically uncertain | `retryable` | Funds stay locked; cooldown applies; uncertainty never creates a terminal refund |
 | `submitted` / `retryable` | Infrastructure/format/consensus failure | `retryable` | Funds stay locked; cooldown applies; review remains available until deadline |
 | `submitted` / `retryable` | `now >= review_deadline` | `refund_dispatched` | Permissionless full sponsor refund; no web/LLM call |
@@ -129,35 +137,47 @@ Counta ledger automatically.
 
 ## Review budgets and infrastructure policy
 
-Only sponsor or beneficiary may trigger a review. A retryable result sets a
-15-minute cooldown. Semantic uncertainty is a valid hash-verified analysis
-whose decision is neither approved nor explicitly rejected. Every such result
-remains `retryable`; no counter value can block the milestone, enable
-settlement, or refund funds. The semantic counter is bounded telemetry only.
-Either party may review after cooldown while `now < review_deadline`. If the
-state remains `submitted` or `retryable` at the fixed deadline, permissionless
-`expire()` refunds the sponsor. Repeated calls by either party cannot consume a
-shared terminal retry budget or create an early uncertainty refund.
+Only sponsor or beneficiary may trigger a review. Retry cooldowns are
+party-specific: a sponsor's retry sets only `sponsor_next_review_at`, and a
+beneficiary's retry sets only `beneficiary_next_review_at`, each to
+`now + 900 seconds`. The opposite party may still review immediately. Each
+party remains independently rate-limited. Cooldowns never extend the fixed
+review deadline. Semantic uncertainty is a valid hash-verified analysis whose
+decision is neither approved nor explicitly rejected. It remains `retryable`;
+neither bounded telemetry counter can block review, enable settlement, or
+refund funds. If the state remains `submitted` or `retryable` at the deadline,
+permissionless `expire()` refunds the sponsor.
 
-Infrastructure includes HTTP 403, 408, 429, 5xx, network exceptions, malformed
-HTTP status metadata, LLM execution failure, malformed structured output,
-invalid consensus returns and observation failures. These increment a separate
-telemetry counter capped at three, but this counter cannot block another
-review. Every infrastructure failure remains `retryable`, stores its reason,
-and sets `next_review_at=now + 900 seconds`. Failures do not enable settlement;
-only expiry at the fixed review deadline can refund unresolved funds. Retries
-never extend that deadline. At exact equality, review is rejected and expiry is
+Infrastructure includes network exceptions, malformed HTTP status/body,
+LLM execution failure, malformed structured output, invalid consensus returns,
+and observation failures. Infrastructure attempts are telemetry capped at
+three, not a retry budget. Every such failure remains `retryable`, and only the
+initiating party's cooldown is set. Failed observations cannot settle or refund
+escrow. At exact review-deadline equality, review is rejected and expiry is
 allowed.
 
-HTTP policy: 2xx responses are checked for body, size, hash and encoding.
-HTTP 403/408/429 and 5xx are transient infrastructure (`retryable`). HTTP
-404/410 are deterministic missing/removed-content failures (`blocked`). Other
-non-special non-2xx responses, including 3xx responses if surfaced rather than
-followed by the runtime, are deterministic response/content failures
-(`blocked`). Missing, nonnumeric or out-of-range status metadata is an
-infrastructure error (`retryable`). Network exceptions are `retryable`.
-Deterministic artifact failures such as empty/oversized content, invalid body,
-hash mismatch, invalid UTF-8 or unsupported image bytes become `blocked`.
+The artifact roles have intentionally different failure policies. The
+beneficiary commits the deliverable bytes; the sponsor selects the evidence
+authority. A permanent defect in the beneficiary's deliverable commitment may
+therefore block, but an evidence server controlled or influenced by the sponsor
+must not be able to manufacture an immediate sponsor-favorable refund.
+
+| Deliverable response/content | Result |
+|---|---|
+| HTTP 200 with exact non-empty bounded bytes, valid text UTF-8 or supported PNG/JPEG | Continue to verified semantic review |
+| HTTP 403, 408, 429, 5xx, network exception, malformed status/body, or surfaced 3xx redirect | `retryable` |
+| HTTP 404/410 or another non-special non-2xx response | `blocked` |
+| Hash mismatch, empty/oversized bytes, invalid UTF-8, or unsupported image bytes | `blocked` |
+
+| Evidence response/content | Result |
+|---|---|
+| HTTP 200 with exact non-empty bounded UTF-8 bytes and matching SHA-256 | Continue to verified semantic review |
+| HTTP 403/404/408/410/429/5xx, any other non-2xx, network exception, malformed status/body, or surfaced 3xx | `retryable` as `evidence_unavailable` |
+| Hash mismatch, empty/oversized bytes, or invalid UTF-8 | `retryable` as `evidence_unavailable` |
+
+Evidence failures never become semantic rejection: the model is called only
+after the exact evidence bytes have been fetched, bounded, hash-verified, and
+decoded. Only then can substantive `evidence_support` or `risk` analysis block.
 
 ## Artifact verification and prompt trust boundary
 

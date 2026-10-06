@@ -24,7 +24,7 @@ and agree on the authorization outcome. No one model's rationale authorizes
 payment. This still cannot eliminate model fallibility, provider outages,
 validator disagreement, or protocol-level `UNDETERMINED` outcomes.
 
-## v0.3.2 hardening
+## v0.3.3 hardening
 
 - Sponsor-fixed evidence authority: creation commits one normalized DNS
   hostname. Beneficiaries may submit evidence only from that exact hostname;
@@ -42,14 +42,23 @@ validator disagreement, or protocol-level `UNDETERMINED` outcomes.
   becomes a terminal result merely because it repeats; unresolved work becomes
   refundable only at the fixed review deadline through permissionless `expire()`.
   No split or Counta-level inconclusive state exists.
-- Semantic uncertainty and infrastructure failures are both non-authorizing,
-  retryable after the same cooldown, and cannot be used by either party to
-  exhaust a shared terminal retry budget. The semantic counter is capped
-  telemetry only. HTTP 403, 408, 429, 5xx, network/LLM errors, malformed model
-  output, and failed consensus returns never approve or make funds immediately
-  refundable. HTTP 404/410 and other non-special non-2xx responses remain
-  deterministic artifact failures and block; unresolved retryable work expires
-  only at the fixed review deadline.
+- Evidence and deliverables have separate failure economics. Every sponsor-
+  selected evidence-source retrieval/content failure (including HTTP errors,
+  redirects, wrong bytes, empty/oversized content, and invalid UTF-8) is
+  `retryable`; semantic support is judged only after exact evidence bytes are
+  fetched and verified. This prevents the sponsor's evidence source from
+  creating an early sponsor-favorable refund. Deterministic deliverable
+  integrity failures remain `blocked`; transient deliverable fetch failures
+  are `retryable`.
+- Sponsor and beneficiary have independent 15-minute review cooldowns. A
+  retry by one party never consumes the other's review opportunity. Neither
+  cooldown extends the fixed review deadline. The semantic and infrastructure
+  counters remain bounded telemetry only; unresolved funds become refundable
+  only through permissionless `expire()` at the deadline.
+- Deliverable HTTP 403/408/429/5xx and surfaced redirects are retryable;
+  other surfaced non-2xx responses and deterministic content failures block.
+  Every evidence HTTP/source/content/hash failure is retryable. Network/LLM
+  errors, malformed output, and failed consensus never approve.
 - Prompt inputs are one canonical JSON data block. Brief, summary, evidence,
   URLs, text deliverable, and visible image words are all untrusted content, not
   reviewer instructions. Image evidence is raw PNG/JPEG input; the evaluator is
@@ -106,36 +115,40 @@ validator disagreement, or protocol-level `UNDETERMINED` outcomes.
 
 ## Release status
 
-**Current deployed release: v0.3.2.** The Studionet contract is
-[`0x5E7D5C3039713b50aD46d09C3c1ad0c7194ce07e`](https://explorer-studio.genlayer.com/address/0x5E7D5C3039713b50aD46d09C3c1ad0c7194ce07e).
+**Current deployed release: v0.3.3.** The Studionet contract is
+[`0xC3402F827Ba8E6ee706A8290B4a47d2b447285B2`](https://explorer-studio.genlayer.com/address/0xC3402F827Ba8E6ee706A8290B4a47d2b447285B2).
 Deployment transaction:
-[`0xca44755d4d4166f238d3a5243e66c721d5870c3f2180b294a21b42d905fe0c12`](https://explorer-studio.genlayer.com/tx/0xca44755d4d4166f238d3a5243e66c721d5870c3f2180b294a21b42d905fe0c12),
-FINALIZED / MAJORITY_AGREE / GenVM SUCCESS. The deployed code was retrieved
-using the official GenLayer CLI code-inspection command and compared byte for
-byte with frozen source commit `e546d8b83c67adb67fd0780961e1159822b14980`:
-36,598 bytes, Git blob `4946d1481f93f3e8fb93710f50167e3d034e2b7e`, and SHA-256
-`ae899a586ee77a316870a800aa8c4baf9c12d7f8267320d14691327dc551f1ac` on both
-sides. Release tag: `v0.3.2`. `get_info()` and complete live evidence are in
+[`0x5627121e05f5e0ccfed6071b978049dd2b215023dafbbef91894fce1ed5b15a7`](https://explorer-studio.genlayer.com/tx/0x5627121e05f5e0ccfed6071b978049dd2b215023dafbbef91894fce1ed5b15a7),
+FINALIZED / MAJORITY_AGREE / GenVM SUCCESS. Frozen source commit and tag:
+`7fa406e9f5d712c237d241c6a5daedf04b2b5909` / `v0.3.3`; contract SHA-256
+`c1160498a29145ac2806a555ec5121d5e858a16d384ec5184b11f9cb68272ff6`, Git
+blob `85646a19c6171e6503b47151b902917c0b7cf4b1`, 38,570 bytes. Official CLI
+source retrieval and byte comparison confirmed exact deployed-source parity.
+Exact `get_info()`, CI, and all live lifecycle receipts are recorded in
 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
-The release-gate run on the frozen source, GitHub Actions
-[37430349521](https://github.com/Bibidee/counta/actions/runs/37430349521),
-completed successfully on that exact source commit. It recorded 105 tests
-passed, 0 failed, 0 skipped, with preflight, GenVM lint, and ABI/schema
-passing. A later fixture-only commit's hosted run
-[37432617416](https://github.com/Bibidee/counta/actions/runs/37432617416) also
-passed; the final documentation-only HEAD is checked separately after this
-evidence update.
+The frozen-source release gate passed 132 tests, 0 failed, 0 skipped;
+preflight, GenVM lint, and ABI/schema passed. Exact-source GitHub Actions
+[37456630767](https://github.com/Bibidee/counta/actions/runs/37456630767)
+completed successfully. The live v0.3.3 evidence includes: an approved payout
+with `value_credited=true`; a genuine semantic rejection and credited sponsor
+refund; and a controlled evidence-source 404 that remained retryable, followed
+by publishing the exact committed bytes and approval from the beneficiary
+while the sponsor cooldown was still active. All fixtures are repository-
+owned, so these demonstrate contract behavior and exact-byte handling, not
+independent authorship or real-world truth. Final documentation-head CI is
+recorded in `docs/DEPLOYMENT.md` after it completes.
 
-The v0.3.2 live evidence demonstrates both a full approved beneficiary payout
-and an explicit blocked/refund path, each funded with 0.001 GEN. Child
-transactions finalized with `value_credited=true`; the recipient, amount, and
-transaction details are recorded in the deployment evidence. Fixtures are
-repository-owned, and the approval support is a GitHub Actions API record;
-these prove committed-byte handling and the observed release record, not
-independent authorship or real-world truth. Live 403 recovery, controllable
-semantic uncertainty, and review-deadline expiry were not fabricated; those
-behaviors are covered by deterministic regression tests.
+**Historical deployed release: v0.3.2 (superseded).** Address
+[`0x5E7D5C3039713b50aD46d09C3c1ad0c7194ce07e`](https://explorer-studio.genlayer.com/address/0x5E7D5C3039713b50aD46d09C3c1ad0c7194ce07e);
+deployment transaction
+[`0xca44755d4d4166f238d3a5243e66c721d5870c3f2180b294a21b42d905fe0c12`](https://explorer-studio.genlayer.com/tx/0xca44755d4d4166f238d3a5243e66c721d5870c3f2180b294a21b42d905fe0c12);
+source commit `e546d8b83c67adb67fd0780961e1159822b14980`; SHA-256
+`ae899a586ee77a316870a800aa8c4baf9c12d7f8267320d14691327dc551f1ac`;
+36,598 bytes, parity verified. Its historical source-head CI run
+[37430349521](https://github.com/Bibidee/counta/actions/runs/37430349521)
+passed with 105 tests. Its approved payout and blocked/refund evidence remain
+fully preserved in the deployment record.
 
 **Historical deployed release: v0.3.1 (superseded).** The Studionet contract is
 [`0xE4Bb7FC4C217EE867F14d40aFaa1e868693CDcAB`](https://explorer-studio.genlayer.com/address/0xE4Bb7FC4C217EE867F14d40aFaa1e868693CDcAB).
