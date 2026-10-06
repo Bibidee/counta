@@ -1,4 +1,4 @@
-# Counta protocol design (v0.3.2 candidate)
+# Counta protocol design (v0.3.2, current deployed release)
 
 Counta holds sponsor-provided GEN against one fixed milestone. The sponsor
 commits the parties, brief, delivery deadline, review window and exact allowed
@@ -6,17 +6,37 @@ evidence hostname before beneficiary acceptance. A single hash-bound submission
 is independently fetched and semantically assessed through GenLayer. Only
 deterministic state logic releases funds.
 
-v0.3.1 remains the current deployed Studionet release at
+v0.3.2 is deployed to GenLayer Studionet (chain ID 61999) at
+`0x5E7D5C3039713b50aD46d09C3c1ad0c7194ce07e`. Deployment transaction:
+`0xca44755d4d4166f238d3a5243e66c721d5870c3f2180b294a21b42d905fe0c12`;
+deployment finalized with MAJORITY_AGREE and GenVM SUCCESS. Frozen source
+commit: `e546d8b83c67adb67fd0780961e1159822b14980`; SHA-256:
+`ae899a586ee77a316870a800aa8c4baf9c12d7f8267320d14691327dc551f1ac`; Git
+blob: `4946d1481f93f3e8fb93710f50167e3d034e2b7e`; source length: 36,598 bytes.
+Deployed code retrieved through the official GenLayer CLI was byte-for-byte
+equal to the frozen local source. The v0.3.2 release gate passed 105 tests
+with no skips or failures; frozen-source CI, lint, ABI/schema, and preflight
+passed. `get_info()` and exact live transaction evidence are in
+`docs/DEPLOYMENT.md`.
+
+Live evidence on v0.3.2 includes one approved 0.001 GEN milestone paid to the
+designated beneficiary and one explicit semantic rejection refunded to the
+sponsor. Both child receipts are FINALIZED and show `value_credited=true` for
+the exact 0.001 GEN transfer. Repository-owned fixtures and GitHub-generated
+Actions API evidence are not independent human-authored evidence. No live
+403-recovery, deterministic semantic-uncertainty, or three-day deadline-expiry
+sequence is claimed; these behaviors are covered by tests.
+
+v0.3.1 is a historical, superseded deployment at
 `0xE4Bb7FC4C217EE867F14d40aFaa1e868693CDcAB`. Its frozen source commit is
-`8c7d472522e90b481bce56794c175e2e951c99fa`; the contract SHA-256 is
-`9b98e0016a38e7c4ad8e613370b0667e7c4b37910e4dbaf26e99a6a1688be005` and
-contains 36,535 bytes. Deployed-source parity was verified byte-for-byte.
+`8c7d472522e90b481bce56794c175e2e951c99fa`; contract SHA-256:
+`9b98e0016a38e7c4ad8e613370b0667e7c4b37910e4dbaf26e99a6a1688be005`;
+source length: 36,535 bytes. Its source parity was verified byte-for-byte.
 v0.3.0 remains historical and superseded at
 `0x4235915E7ec84596239b2d29B93d1a2A982A1018`; its approval/payout evidence is
-preserved in `docs/DEPLOYMENT.md`. The v0.3.2 candidate removes the terminal
+preserved in `docs/DEPLOYMENT.md`. v0.3.2 removes the terminal
 semantic-uncertainty retry budget, classifies HTTP 403 as transient
-infrastructure, and excludes colons from local milestone IDs. It is not
-deployed until a new source-matched release is recorded.
+infrastructure, and excludes colons from local milestone IDs.
 
 ## Identity and evidence authority
 

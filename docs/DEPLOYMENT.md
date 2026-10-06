@@ -1,6 +1,124 @@
 # Counta deployment and release evidence
 
-## Current deployed release: v0.3.1
+## Current deployed release: v0.3.2
+
+| Evidence | Verified value |
+|---|---|
+| Network | GenLayer Studionet, chain ID 61999 |
+| Frozen source commit | `e546d8b83c67adb67fd0780961e1159822b14980` |
+| Release tag | `v0.3.2` |
+| Contract SHA-256 | `ae899a586ee77a316870a800aa8c4baf9c12d7f8267320d14691327dc551f1ac` |
+| Git blob SHA | `4946d1481f93f3e8fb93710f50167e3d034e2b7e` |
+| Source size | 36,598 bytes locally and as retrieved from Studionet |
+| Contract address | [`0x5E7D5C3039713b50aD46d09C3c1ad0c7194ce07e`](https://explorer-studio.genlayer.com/address/0x5E7D5C3039713b50aD46d09C3c1ad0c7194ce07e) |
+| Deployment transaction | [`0xca44755d4d4166f238d3a5243e66c721d5870c3f2180b294a21b42d905fe0c12`](https://explorer-studio.genlayer.com/tx/0xca44755d4d4166f238d3a5243e66c721d5870c3f2180b294a21b42d905fe0c12) |
+| Deployment result | FINALIZED / MAJORITY_AGREE / GenVM SUCCESS |
+| Source parity | VERIFIED byte-for-byte: official GenLayer CLI code retrieval was decoded and compared with frozen local source; both are 36,598 bytes and have the same SHA-256 |
+| Frozen-source GitHub Actions | [run 37430349521](https://github.com/Bibidee/counta/actions/runs/37430349521): completed, success, exact source commit |
+| Fixture-commit GitHub Actions | [run 37432617416](https://github.com/Bibidee/counta/actions/runs/37432617416): completed, success, exact fixture commit |
+| Frozen-source release gate | 105 passed, 0 failed, 0 skipped; preflight, GenVM lint and ABI/schema passed |
+| `get_info()` | `name=Counta`, `version=0.3.2`, `min_confidence=75`, `min_deposit=1000000000000000`, text/image limits `16000/2000000`, review cooldown `900`, semantic telemetry cap `1000`, infrastructure telemetry cap `3`, evidence authority `sponsor_fixed_exact_hostname`, identity `sponsor_scoped_composite_reference`, infrastructure policy `retry_after_cooldown_until_review_deadline`, milestone capacity `unbounded_by_contract` |
+
+The v0.3.2 deployment is the current submission candidate. The v0.3.1
+deployment evidence below is retained as historical evidence; its address and
+transactions are not v0.3.2 evidence. The frozen release CI result is for the
+contract source commit; the fixture-only commit and final documentation commit
+have separate hosted CI runs recorded where available.
+
+### v0.3.2 live approval and beneficiary payout
+
+Milestone ID: `COUNTA-V032-APPROVED-20261006-001`. Canonical reference:
+`0x7c65ce913f5665c11f1219048112c84cd6cb2a4b:COUNTA-V032-APPROVED-20261006-001`.
+Sponsor: `0x7C65cE913F5665c11f1219048112C84CD6cb2a4B`. Designated beneficiary:
+`0x2cd419603eBa593074653930Ddc4073d4FD8fc60`. Deposit: 0.001 GEN
+(`1000000000000000` wei). The brief requested a verification of the frozen
+v0.3.2 source, SHA-256, release test result, and exact-head CI record.
+
+Deliverable URL:
+[`https://raw.githubusercontent.com/Bibidee/counta/b577f4dcdbcd6d109905bf1554c4aebfc1883e86/evidence/live-v032-release-attestation.txt`](https://raw.githubusercontent.com/Bibidee/counta/b577f4dcdbcd6d109905bf1554c4aebfc1883e86/evidence/live-v032-release-attestation.txt),
+424 raw bytes, SHA-256
+`1425cbd893959607fe6f4186941231d92b8e83f787428228a3606cfaf80de8a0`.
+
+Evidence URL:
+[`https://api.github.com/repos/Bibidee/counta/actions/runs/37430349521`](https://api.github.com/repos/Bibidee/counta/actions/runs/37430349521),
+11,529 raw bytes, SHA-256
+`b126f397dd286e5dd87ff6445ef66832ba4ad700e8af83133daebc77dbc08fff`.
+The API record confirmed GitHub Actions success and the matching source
+`head_sha`; it is GitHub-generated evidence, not independent human-authored
+corroboration. The deliverable fixture is repository-owned.
+
+| Step | Transaction | Finalized result |
+|---|---|---|
+| `create_milestone` | [`0xba3de3203231ddc6b7c892f549cbc0344d1fa2b177b9367f803e7293b1154a8c`](https://explorer-studio.genlayer.com/tx/0xba3de3203231ddc6b7c892f549cbc0344d1fa2b177b9367f803e7293b1154a8c) | FINALIZED / MAJORITY_AGREE / GenVM SUCCESS; 0.001 GEN credited |
+| `accept_milestone` | [`0x744437aacba3ba6b6475d436f5ecd10d3523b042ae4bf35af026d1cd59a4c323`](https://explorer-studio.genlayer.com/tx/0x744437aacba3ba6b6475d436f5ecd10d3523b042ae4bf35af026d1cd59a4c323) | FINALIZED / MAJORITY_AGREE / GenVM SUCCESS |
+| `submit_delivery` | [`0xf3f67d60e205777264571cabdac56d830da9e2e1e02476cd025b2c0479265037`](https://explorer-studio.genlayer.com/tx/0xf3f67d60e205777264571cabdac56d830da9e2e1e02476cd025b2c0479265037) | FINALIZED / MAJORITY_AGREE / GenVM SUCCESS; committed URLs and hashes stored |
+| `review` | [`0x3d89d2e02d4d23ecb0c618d7718ec4eb8c8dbf63ea995db05ece205959574412`](https://explorer-studio.genlayer.com/tx/0x3d89d2e02d4d23ecb0c618d7718ec4eb8c8dbf63ea995db05ece205959574412) | FINALIZED / MAJORITY_AGREE; leader GenVM SUCCESS; approved, confidence 100 |
+| `settle` | [`0xbafb58bddfe8024c03c46738af9d30093035a6d312c20657ddc3eb38a970c4e3`](https://explorer-studio.genlayer.com/tx/0xbafb58bddfe8024c03c46738af9d30093035a6d312c20657ddc3eb38a970c4e3) | FINALIZED / MAJORITY_AGREE / GenVM SUCCESS; beneficiary transfer dispatched |
+| Child transfer | [`0x72ea6432d7d844879d1e12e31ba4b8678903f6bf891c435a21c6f9541ad199b3`](https://explorer-studio.genlayer.com/tx/0x72ea6432d7d844879d1e12e31ba4b8678903f6bf891c435a21c6f9541ad199b3) | FINALIZED; Counta sender to beneficiary; `1000000000000000` wei; `value_credited=true`; child result `NO_MAJORITY` |
+
+The canonical final read reports `payout_dispatched`,
+`settlement=beneficiary_payout_dispatched`, `deposited=0`,
+`dispatched_amount=1000000000000000`,
+`beneficiary_dispatched_amount=1000000000000000`, and
+`sponsor_dispatched_amount=0`. The separate child receipt confirms the
+beneficiary credit. The stored review rationale was: “The deliverable matches
+all requirements in the brief: frozen source commit (e546d8b8...), SHA-256
+(ae899a58...), 105 tests passed, and successful lint/schema/preflight. The
+supporting evidence (GitHub API response) confirms that run 37430349521
+completed with 'success' on the exact head_sha
+e546d8b83c67adb67fd0780961e1159822b14980.” The beneficiary balance increased
+by exactly 0.001 GEN between the recorded before/after reads.
+
+### v0.3.2 live explicit rejection and sponsor refund
+
+Milestone ID: `COUNTA-V032-BLOCKED-20261006-001`. Canonical reference:
+`0x7c65ce913f5665c11f1219048112c84cd6cb2a4b:COUNTA-V032-BLOCKED-20261006-001`.
+The sponsor and beneficiary were the same addresses as above; deposit was
+0.001 GEN. The brief required the deliverable's first line to be exactly
+`MILESTONE COMPLETE` and to state completion. The committed deliverable
+explicitly stated that work was not complete.
+
+Deliverable URL:
+[`https://raw.githubusercontent.com/Bibidee/counta/b577f4dcdbcd6d109905bf1554c4aebfc1883e86/evidence/live-v032-incomplete-deliverable.txt`](https://raw.githubusercontent.com/Bibidee/counta/b577f4dcdbcd6d109905bf1554c4aebfc1883e86/evidence/live-v032-incomplete-deliverable.txt),
+119 raw bytes, SHA-256
+`5e4b635c1b890c55a56be5c107c83c7aeb0bb9d8fb63465cd54e290018b4c879`.
+
+Evidence URL:
+[`https://cdn.jsdelivr.net/gh/Bibidee/counta@b577f4dcdbcd6d109905bf1554c4aebfc1883e86/evidence/live-v032-incomplete-verification.txt`](https://cdn.jsdelivr.net/gh/Bibidee/counta@b577f4dcdbcd6d109905bf1554c4aebfc1883e86/evidence/live-v032-incomplete-verification.txt),
+137 raw bytes, SHA-256
+`ac2ed1fa16fabba26f2d695e947d91409c887241a580d6684ac3c69de9ebf286`.
+Both fixtures are repository-owned, not independent human-authored sources.
+
+| Step | Transaction | Finalized result |
+|---|---|---|
+| `create_milestone` | [`0xf7e671ce29164f5538e3046989615b46f8b337ebe5f0940f5245bab8a18de519`](https://explorer-studio.genlayer.com/tx/0xf7e671ce29164f5538e3046989615b46f8b337ebe5f0940f5245bab8a18de519) | FINALIZED / MAJORITY_AGREE / GenVM SUCCESS; 0.001 GEN credited |
+| `accept_milestone` | [`0xb7b0baa7db010066a9f349742ee5655d7fa83583188c5273ecce29b8d8d4f30f`](https://explorer-studio.genlayer.com/tx/0xb7b0baa7db010066a9f349742ee5655d7fa83583188c5273ecce29b8d8d4f30f) | FINALIZED / MAJORITY_AGREE / GenVM SUCCESS |
+| `submit_delivery` | [`0x89b2e2faae0f582fd5cc2125025ac0353757b7e67dff8ca4e09bdb67ec217774`](https://explorer-studio.genlayer.com/tx/0x89b2e2faae0f582fd5cc2125025ac0353757b7e67dff8ca4e09bdb67ec217774) | FINALIZED / MAJORITY_AGREE / GenVM SUCCESS; committed URLs and hashes stored |
+| `review` | [`0x29d26942462dcbfaf27fdfd3bab4c287465b06764a0144d9407196d470159052`](https://explorer-studio.genlayer.com/tx/0x29d26942462dcbfaf27fdfd3bab4c287465b06764a0144d9407196d470159052) | FINALIZED / MAJORITY_AGREE; leader GenVM SUCCESS; blocked, confidence 99, reason `semantic_rejection` |
+| `settle` | [`0x76b5e36b87e599ba6d9a3fa71727aa31bd4790385697f68731f8425319882a9e`](https://explorer-studio.genlayer.com/tx/0x76b5e36b87e599ba6d9a3fa71727aa31bd4790385697f68731f8425319882a9e) | FINALIZED / MAJORITY_AGREE / GenVM SUCCESS; sponsor refund dispatched |
+| Child transfer | [`0x13116022b0fa609a37b7bdfb3cdac16fdbea85af26685dcd7d435ab9471d0019`](https://explorer-studio.genlayer.com/tx/0x13116022b0fa609a37b7bdfb3cdac16fdbea85af26685dcd7d435ab9471d0019) | FINALIZED; Counta sender to sponsor; `1000000000000000` wei; `value_credited=true`; child result `NO_MAJORITY` |
+
+The final canonical read reports `refund_dispatched`,
+`settlement=sponsor_refund_dispatched`, `deposited=0`,
+`dispatched_amount=1000000000000000`,
+`sponsor_dispatched_amount=1000000000000000`, and
+`beneficiary_dispatched_amount=0`. The child receipt confirms the sponsor
+credit. The stored rationale identified the deliverable's first line as
+`MILESTONE NOT COMPLETE`, noted its explicit statement that no work product
+was submitted, and explained the contradiction with the brief. This is an
+actual semantic rejection, not a fabricated model result.
+
+### v0.3.2 live paths not claimed
+
+No live 403-to-recovery path or controllable semantic-uncertainty fairness
+sequence is claimed; producing those outcomes from a real provider would not
+be deterministic, and no controlled genuine 403-to-200 endpoint was used.
+No live review-deadline expiry was attempted because the configured window is
+three days. The exact behaviors are covered by Direct Mode regression tests;
+the live flows above establish approved payout and explicit semantic
+rejection/refund only.
+
+## Historical deployed release: v0.3.1 (superseded)
 
 | Evidence | Verified value |
 |---|---|

@@ -24,7 +24,7 @@ and agree on the authorization outcome. No one model's rationale authorizes
 payment. This still cannot eliminate model fallibility, provider outages,
 validator disagreement, or protocol-level `UNDETERMINED` outcomes.
 
-## v0.3.2 hardening (source candidate)
+## v0.3.2 hardening
 
 - Sponsor-fixed evidence authority: creation commits one normalized DNS
   hostname. Beneficiaries may submit evidence only from that exact hostname;
@@ -106,7 +106,38 @@ validator disagreement, or protocol-level `UNDETERMINED` outcomes.
 
 ## Release status
 
-**Current deployed release: v0.3.1.** The Studionet contract is
+**Current deployed release: v0.3.2.** The Studionet contract is
+[`0x5E7D5C3039713b50aD46d09C3c1ad0c7194ce07e`](https://explorer-studio.genlayer.com/address/0x5E7D5C3039713b50aD46d09C3c1ad0c7194ce07e).
+Deployment transaction:
+[`0xca44755d4d4166f238d3a5243e66c721d5870c3f2180b294a21b42d905fe0c12`](https://explorer-studio.genlayer.com/tx/0xca44755d4d4166f238d3a5243e66c721d5870c3f2180b294a21b42d905fe0c12),
+FINALIZED / MAJORITY_AGREE / GenVM SUCCESS. The deployed code was retrieved
+using the official GenLayer CLI code-inspection command and compared byte for
+byte with frozen source commit `e546d8b83c67adb67fd0780961e1159822b14980`:
+36,598 bytes, Git blob `4946d1481f93f3e8fb93710f50167e3d034e2b7e`, and SHA-256
+`ae899a586ee77a316870a800aa8c4baf9c12d7f8267320d14691327dc551f1ac` on both
+sides. Release tag: `v0.3.2`. `get_info()` and complete live evidence are in
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
+The release-gate run on the frozen source, GitHub Actions
+[37430349521](https://github.com/Bibidee/counta/actions/runs/37430349521),
+completed successfully on that exact source commit. It recorded 105 tests
+passed, 0 failed, 0 skipped, with preflight, GenVM lint, and ABI/schema
+passing. A later fixture-only commit's hosted run
+[37432617416](https://github.com/Bibidee/counta/actions/runs/37432617416) also
+passed; the final documentation-only HEAD is checked separately after this
+evidence update.
+
+The v0.3.2 live evidence demonstrates both a full approved beneficiary payout
+and an explicit blocked/refund path, each funded with 0.001 GEN. Child
+transactions finalized with `value_credited=true`; the recipient, amount, and
+transaction details are recorded in the deployment evidence. Fixtures are
+repository-owned, and the approval support is a GitHub Actions API record;
+these prove committed-byte handling and the observed release record, not
+independent authorship or real-world truth. Live 403 recovery, controllable
+semantic uncertainty, and review-deadline expiry were not fabricated; those
+behaviors are covered by deterministic regression tests.
+
+**Historical deployed release: v0.3.1 (superseded).** The Studionet contract is
 [`0xE4Bb7FC4C217EE867F14d40aFaa1e868693CDcAB`](https://explorer-studio.genlayer.com/address/0xE4Bb7FC4C217EE867F14d40aFaa1e868693CDcAB).
 Deployment transaction:
 [`0xa8b3ed6c3e0a6b297d5017350c7cef3b46f05fb0b3eb9ae8343a10b7d31ddced`](https://explorer-studio.genlayer.com/tx/0xa8b3ed6c3e0a6b297d5017350c7cef3b46f05fb0b3eb9ae8343a10b7d31ddced),
@@ -120,7 +151,7 @@ bytes with SHA-256
 produce a beneficiary payout. A second v0.3.1 release-attestation flow
 finalized `funded -> active -> submitted -> approved -> payout_dispatched`;
 the child transfer finalized with `value_credited=true` for the designated
-beneficiary. Both current-version outcomes, including exact transactions and
+beneficiary. These historical v0.3.1 outcomes, including exact transactions and
 artifact commitments, are recorded in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 **Historical deployed release: v0.3.0 (superseded).** It is deployed to Studionet at
