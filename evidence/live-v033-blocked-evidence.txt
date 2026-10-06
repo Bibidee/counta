@@ -1,0 +1,1 @@
+Counta v0.3.3 settlement policy record: approved milestones dispatch their deposited amount to the beneficiary, while blocked milestones dispatch the refund to the sponsor. The submitted statement that every settlement goes to the sponsor is therefore inaccurate.

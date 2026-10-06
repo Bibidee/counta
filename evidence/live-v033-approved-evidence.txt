@@ -1,0 +1,1 @@
+Counta v0.3.3 verification note: the release source stores sponsor_next_review_at and beneficiary_next_review_at separately. It also maps evidence retrieval, hash, decode, empty-content, and size failures to evidence_unavailable, which follows the retryable infrastructure path until the fixed review deadline. This repository-owned note supports the release statement.

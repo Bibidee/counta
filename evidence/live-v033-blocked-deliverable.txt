@@ -1,0 +1,1 @@
+Counta v0.3.3 sends every milestone settlement to the sponsor, regardless of the review result.
