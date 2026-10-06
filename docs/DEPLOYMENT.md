@@ -124,8 +124,9 @@ deliverable. The final canonical read showed `payout_dispatched` and
 
 The release gate on the frozen source commit passed 132 tests; exact-source
 CI run [37456630767](https://github.com/Bibidee/counta/actions/runs/37456630767)
-passed. Final documentation-head CI will be recorded after the evidence update
-and all local gates complete.
+passed. Documentation commits are also gated by the same workflow; the exact
+current documentation HEAD's run is verified after each push and reported in
+the release closeout.
 
 ## Historical deployed release: v0.3.2 (superseded)
 

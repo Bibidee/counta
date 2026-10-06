@@ -136,8 +136,9 @@ refund; and a controlled evidence-source 404 that remained retryable, followed
 by publishing the exact committed bytes and approval from the beneficiary
 while the sponsor cooldown was still active. All fixtures are repository-
 owned, so these demonstrate contract behavior and exact-byte handling, not
-independent authorship or real-world truth. Final documentation-head CI is
-recorded in `docs/DEPLOYMENT.md` after it completes.
+independent authorship or real-world truth. Every documentation push is also
+subject to the same GitHub Actions release gate; check the repository's latest
+workflow run for the exact current HEAD.
 
 **Historical deployed release: v0.3.2 (superseded).** Address
 [`0x5E7D5C3039713b50aD46d09C3c1ad0c7194ce07e`](https://explorer-studio.genlayer.com/address/0x5E7D5C3039713b50aD46d09C3c1ad0c7194ce07e);
