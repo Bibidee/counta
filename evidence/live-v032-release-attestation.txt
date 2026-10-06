@@ -1,0 +1,9 @@
+Counta v0.3.2 release-gate attestation
+Frozen contract source commit: e546d8b83c67adb67fd0780961e1159822b14980
+Contract SHA-256: ae899a586ee77a316870a800aa8c4baf9c12d7f8267320d14691327dc551f1ac
+Direct Mode and preflight tests: 105 passed, 0 failed, 0 skipped
+GenVM lint: PASS
+ABI/schema generation: PASS
+Preflight: PASS
+GitHub Actions run: 37430349521
+The workflow completed successfully for the exact frozen source commit.
